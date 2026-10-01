@@ -31,6 +31,7 @@
     tools_enabled?: boolean;
     tools_allow_shell?: boolean;
     memory_enabled?: boolean;
+    agency_consent?: boolean;
     chat_max_tokens?: number;
     vision_max_tokens?: number;
   }
@@ -62,6 +63,7 @@
     tools_enabled: true,
     tools_allow_shell: false,
     memory_enabled: true,
+    agency_consent: false,
     chat_max_tokens: 768,
     vision_max_tokens: 192,
   };
@@ -383,6 +385,12 @@
             on:change={() => saveSettings()}
           />
           <span>Memory enabled (Phase 2 local facts)</span>
+        </label>
+      </div>
+      <div class="settings-group inline">
+        <label class="checkbox-row">
+          <input type="checkbox" bind:checked={settings.agency_consent} on:change={() => saveSettings()} />
+          <span>Agency consent (P5 — VRM panel is authoritative)</span>
         </label>
       </div>
       <div class="settings-group">

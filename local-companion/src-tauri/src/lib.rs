@@ -40,6 +40,7 @@ use std::time::{Duration, Instant};
 mod tools;
 mod memory;
 mod model_router;
+mod agency;
 
 type ClientMap = Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<Message>>>>;
 
@@ -715,7 +716,7 @@ async fn handle_groq_chat(
             0,
             OllamaApiMessage {
                 role: "system".to_string(),
-                content: memory::memory_note_for_prompt().to_string(),
+                content: format!("{}\n{}", memory::memory_note_for_prompt(), agency::agency_note_for_prompt()),
             },
         );
     }
@@ -1297,12 +1298,95 @@ async fn handle_router_preview(Json(payload): Json<RouterPreviewRequest>) -> Jso
     }))
 }
 
+
+#[derive(Debug, Deserialize)]
+struct AgencyConsentRequest {
+    consent: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgencyCreateRequest {
+    kind: Option<String>,
+    title: String,
+    message: Option<String>,
+    delay_ms: Option<u64>,
+    fire_at_ms: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgencyCancelRequest {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AgencyTickRequest {
+    now_ms: Option<u64>,
+}
+
+async fn handle_agency_status() -> Json<serde_json::Value> {
+    Json(agency::status_json())
+}
+
+async fn handle_agency_list() -> Json<serde_json::Value> {
+    Json(agency::as_json(true))
+}
+
+async fn handle_agency_consent(Json(payload): Json<AgencyConsentRequest>) -> Json<serde_json::Value> {
+    match agency::set_consent(payload.consent) {
+        Ok(v) => Json(v),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn handle_agency_create(Json(payload): Json<AgencyCreateRequest>) -> Json<serde_json::Value> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let fire_at = payload
+        .fire_at_ms
+        .unwrap_or_else(|| now.saturating_add(payload.delay_ms.unwrap_or(60_000)));
+    let kind = payload.kind.as_deref().unwrap_or("reminder");
+    let message = payload.message.as_deref().unwrap_or("");
+    match agency::create(kind, &payload.title, message, fire_at) {
+        Ok(item) => Json(serde_json::json!({"ok": true, "item": item})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn handle_agency_cancel(Json(payload): Json<AgencyCancelRequest>) -> Json<serde_json::Value> {
+    match agency::cancel(&payload.id) {
+        Ok(msg) => Json(serde_json::json!({"ok": true, "result": msg})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn handle_agency_tick(Json(payload): Json<AgencyTickRequest>) -> Json<serde_json::Value> {
+    let now = payload.now_ms.unwrap_or_else(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    });
+    match agency::tick(now) {
+        Ok(fired) => {
+            for f in &fired {
+                println!("[Agency] fired id={} title={}", f.id, f.title);
+                tools::push_log("agency", true, format!("fired {} · {}", f.id, f.title));
+            }
+            Json(serde_json::json!({"ok": true, "fired": fired, "now_ms": now}))
+        }
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
 async fn handle_tools_status() -> Json<serde_json::Value> {
     let settings = load_settings();
     Json(serde_json::json!({
         "tools_enabled": settings.tools_enabled,
         "tools_allow_shell": settings.tools_allow_shell,
         "memory_enabled": settings.memory_enabled,
+        "agency": agency::status_json(),
         "chat_max_tokens": settings.chat_max_tokens,
         "vision_max_tokens": settings.vision_max_tokens,
         "groq_model": settings.groq_model,
@@ -2686,6 +2770,12 @@ async fn start_http_server(clients: SharedClients) {
         .route("/memory/search", post(handle_memory_search))
         .route("/memory/list", get(handle_memory_list))
         .route("/memory/forget", post(handle_memory_forget))
+        .route("/agency/status", get(handle_agency_status))
+        .route("/agency/list", get(handle_agency_list))
+        .route("/agency/consent", post(handle_agency_consent))
+        .route("/agency/create", post(handle_agency_create))
+        .route("/agency/cancel", post(handle_agency_cancel))
+        .route("/agency/tick", post(handle_agency_tick))
         .layer(CorsLayer::permissive())
         .with_state(clients);
 
@@ -2725,6 +2815,23 @@ pub fn run() {
                     println!("[STT] Autostart failed: {}", e);
                 }
             }
+            // Agency tick loop — fires due consented reminders (no shell)
+            tauri::async_runtime::spawn(async {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+                loop {
+                    interval.tick().await;
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as u64)
+                        .unwrap_or(0);
+                    if let Ok(fired) = agency::tick(now) {
+                        for f in fired {
+                            println!("[Agency] fired id={} title={}", f.id, f.title);
+                            tools::push_log("agency", true, format!("fired {} · {}", f.id, f.title));
+                        }
+                    }
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![speak_edge_tts, get_settings, update_settings, get_ollama_models_handler])

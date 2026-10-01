@@ -150,6 +150,9 @@
   $: overlaysOpen = chatOpen || settingsOpen;
   let ttsEnabled: boolean = true;
   let saveDebounce: ReturnType<typeof setTimeout> | null = null;
+  let agencyConsent = false;
+  let agencyStatusText = "";
+  let agencyBusy = false;
   let refFileInput: HTMLInputElement | null = null;
 
   // Settings state
@@ -239,6 +242,48 @@
         vision_api_key: "",
       };
       scheduleSettingsSave();
+    }
+  };
+
+
+  const loadAgencyStatus = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:3030/agency/status");
+      if (!res.ok) return;
+      const data = await res.json();
+      agencyConsent = !!data.consent;
+      agencyStatusText = data.consent
+        ? `Agency on · ${data.pending ?? 0} pending`
+        : "Agency off (no silent schedules)";
+    } catch (e) {
+      console.warn("[Agency] status failed", e);
+    }
+  };
+
+  const setAgencyConsent = async (consent: boolean) => {
+    agencyBusy = true;
+    try {
+      const res = await fetch("http://127.0.0.1:3030/agency/consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ consent }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        agencyStatusText = `Error: ${data.error}`;
+        agencyConsent = !consent;
+      } else {
+        agencyConsent = !!data.consent;
+        agencyStatusText = agencyConsent
+          ? "Consent granted — reminders/watchers allowed"
+          : "Consent revoked — pending cancelled";
+      }
+    } catch (e) {
+      console.error("[Agency] consent error", e);
+      agencyConsent = !consent;
+      agencyStatusText = "Consent update failed";
+    } finally {
+      agencyBusy = false;
     }
   };
 
@@ -1485,6 +1530,7 @@
 
   onMount(() => {
     loadSettings();
+    loadAgencyStatus();
     initScene();
     loadChatHistory();
     window.addEventListener("resize", handleResize);
@@ -2540,6 +2586,21 @@
             <span class="tooltip" title="Stores lasting facts under %APPDATA%\\OllamaGUI\\memory.json and injects a short retrieved block into chat.">?</span>
           </label>
         </div>
+        <div class="settings-group inline-row">
+          <label>
+            <input
+              type="checkbox"
+              bind:checked={agencyConsent}
+              disabled={agencyBusy}
+              onchange={() => setAgencyConsent(agencyConsent)}
+            />
+            Agency consent (reminders/watchers)
+            <span class="tooltip" title="Required. Without this, Noctelle will not schedule or fire reminders/watchers. Stores under %APPDATA%\\OllamaGUI\\agency.json. Revoking cancels pending items.">?</span>
+          </label>
+        </div>
+        {#if agencyStatusText}
+          <p class="hint" style="margin-top:2px;opacity:0.8;">{agencyStatusText}</p>
+        {/if}
         <div class="settings-group">
           <label for="chat-max-tokens">Chat max tokens</label>
           <input

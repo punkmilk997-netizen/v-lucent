@@ -201,7 +201,10 @@ pub fn json_tool_protocol_prompt(allow_shell: bool) -> String {
          - web_search {\"query\":\"...\"}\n\
          - memory_add {\"fact\":\"...\",\"tags\":[\"prefs\"]}\n\
          - memory_search {\"query\":\"...\"}\n\
-         - memory_forget {\"id\":\"m...\"} or {\"query\":\"...\"}\n",
+         - memory_forget {\"id\":\"m...\"} or {\"query\":\"...\"}\n\
+         - agency_create {\"kind\":\"reminder\",\"title\":\"...\",\"delay_ms\":60000}\n\
+         - agency_list {}\n\
+         - agency_cancel {\"id\":\"r...\"}\n",
     );
     if allow_shell {
         tools.push_str(
@@ -232,6 +235,9 @@ pub fn execute_tool(name: &str, args: &Value, allow_shell: bool) -> String {
         "memory_add" => tool_memory_add(args),
         "memory_search" => tool_memory_search(args),
         "memory_forget" => tool_memory_forget(args),
+        "agency_create" => tool_agency_create(args),
+        "agency_list" => tool_agency_list(args),
+        "agency_cancel" => tool_agency_cancel(args),
         "run_command" => {
             if !allow_shell {
                 Err("run_command disabled (tools_allow_shell=false)".into())
@@ -701,6 +707,61 @@ fn tool_memory_forget(args: &Value) -> Result<String, String> {
     let all = args.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
     crate::memory::memory_forget(id, query, all)
 }
+
+fn tool_agency_create(args: &Value) -> Result<String, String> {
+    let kind = args.get("kind").and_then(|v| v.as_str()).unwrap_or("reminder");
+    let title = args.get("title").and_then(|v| v.as_str()).unwrap_or("");
+    let message = args.get("message").and_then(|v| v.as_str()).unwrap_or("");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let fire_at = if let Some(abs) = args.get("fire_at_ms").and_then(|v| v.as_u64()) {
+        abs
+    } else {
+        let delay = args.get("delay_ms").and_then(|v| v.as_u64()).unwrap_or(60_000);
+        now.saturating_add(delay)
+    };
+    let item = crate::agency::create(kind, title, message, fire_at)?;
+    Ok(format!(
+        "scheduled {} id={} fire_at_ms={} title={}",
+        item.kind.as_str(),
+        item.id,
+        item.fire_at_ms,
+        item.title
+    ))
+}
+
+fn tool_agency_list(args: &Value) -> Result<String, String> {
+    let include_done = args
+        .get("include_done")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let items = crate::agency::list(include_done)?;
+    if items.is_empty() {
+        return Ok("(no agency items)".into());
+    }
+    let lines: Vec<String> = items
+        .iter()
+        .map(|i| {
+            format!(
+                "{} [{}] {:?} @{} — {}",
+                i.id,
+                i.kind.as_str(),
+                i.status,
+                i.fire_at_ms,
+                i.title
+            )
+        })
+        .collect();
+    Ok(lines.join("\n"))
+}
+
+fn tool_agency_cancel(args: &Value) -> Result<String, String> {
+    let id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
+    crate::agency::cancel(id)
+}
+
 pub fn parse_tool_calls_from_text(text: &str) -> Vec<(String, Value)> {
     let mut calls = Vec::new();
     for line in text.lines() {
