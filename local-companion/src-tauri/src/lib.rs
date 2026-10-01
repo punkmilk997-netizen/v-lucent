@@ -39,6 +39,7 @@ use std::time::{Duration, Instant};
 
 mod tools;
 mod memory;
+mod model_router;
 
 type ClientMap = Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<Message>>>>;
 
@@ -286,13 +287,14 @@ async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<ser
     } else {
         settings.api_type.trim().to_string()
     };
-    let model = if !settings.vision_model.trim().is_empty() {
-        settings.vision_model.trim().to_string()
-    } else if provider.eq_ignore_ascii_case("groq") && !settings.groq_model.trim().is_empty() {
-        settings.groq_model.trim().to_string()
+    let light_fallback = if provider.eq_ignore_ascii_case("groq") {
+        settings.groq_model.as_str()
     } else {
-        settings.openrouter_provider.trim().to_string()
+        settings.openrouter_provider.as_str()
     };
+    let vision_decision = model_router::resolve_vision(&settings.vision_model, light_fallback);
+    vision_decision.log_line("capture_and_ask");
+    let model = vision_decision.model.clone();
     let api_key = if !settings.vision_api_key.trim().is_empty() {
         settings.vision_api_key.trim().to_string()
     } else if provider.eq_ignore_ascii_case("groq") && !settings.groq_api_key.trim().is_empty() {
@@ -423,7 +425,13 @@ async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<ser
     } else {
         "".to_string()
     };
-    Json(json!({"text": content, "raw": parsed}))
+    Json(json!({
+        "text": content,
+        "raw": parsed,
+        "model_used": model,
+        "router_tier": vision_decision.tier.as_str(),
+        "router_reason": vision_decision.reason,
+    }))
 }
 
 fn ensure_vision_install_dir(dir: &Path) -> Result<(), String> {
@@ -593,17 +601,15 @@ fn start_vision_service(settings: &AppSettings) -> Result<(), String> {
         settings.api_type.trim().to_string()
     };
 
-    let model = if !settings.vision_model.trim().is_empty() {
-        settings.vision_model.trim().to_string()
-    } else {
-        match provider.as_str() {
-            "ollama" => settings.ollama_model.trim().to_string(),
-            "groq" => settings.groq_model.trim().to_string(),
-            "openrouter" => settings.openrouter_provider.trim().to_string(),
-            "openai" => settings.openrouter_provider.trim().to_string(),
-            _ => settings.ollama_model.trim().to_string(),
-        }
+    let light_fallback = match provider.as_str() {
+        "ollama" => settings.ollama_model.as_str(),
+        "groq" => settings.groq_model.as_str(),
+        "openrouter" | "openai" => settings.openrouter_provider.as_str(),
+        _ => settings.ollama_model.as_str(),
     };
+    let vision_decision = model_router::resolve_vision(&settings.vision_model, light_fallback);
+    vision_decision.log_line("vision_service_start");
+    let model = vision_decision.model.clone();
 
     let api_key = if !settings.vision_api_key.trim().is_empty() {
         settings.vision_api_key.trim().to_string()
@@ -721,13 +727,17 @@ async fn handle_groq_chat(
         });
     }
     let api_key = settings.groq_api_key.trim().to_string();
-    // Fast vs heavy by message complexity first; tool loop upgrades to heavy when router on.
-    let model = resolve_chat_model(
-        &settings,
-        &payload.messages,
-        payload.model.clone(),
+    let user_text = last_user_text(&payload.messages);
+    // Settings are source of truth for light/heavy ids (gpt-oss only when configured there).
+    let decision = model_router::resolve_chat(
+        settings.model_router,
+        &settings.groq_model,
+        &settings.heavy_model,
+        &user_text,
         false,
+        payload.model.as_deref(),
     );
+    decision.log_line("groq_chat");
 
     let msg_count = payload.messages.len();
     let first_preview = payload
@@ -735,31 +745,40 @@ async fn handle_groq_chat(
         .get(0)
         .map(|m| m.content.chars().take(120).collect::<String>())
         .unwrap_or_default();
-    println!("[Groq] model='{}' messages={} first='{}' tools_enabled={}", model, msg_count, first_preview, settings.tools_enabled);
+    println!(
+        "[Groq] model='{}' tier={} reason={} messages={} first='{}' tools_enabled={}",
+        decision.model,
+        decision.tier.as_str(),
+        decision.reason,
+        msg_count,
+        first_preview,
+        settings.tools_enabled
+    );
 
     if api_key.is_empty() {
         println!("[Groq] Missing API key");
         return Json(serde_json::json!({"error": "Groq API key is missing"}));
     }
-    if model.is_empty() {
+    if decision.model.is_empty() {
         println!("[Groq] Missing model");
         return Json(serde_json::json!({"error": "Groq model is missing"}));
     }
 
     if !settings.tools_enabled {
-        return groq_passthrough(api_key, model, payload.messages, &settings, t_start).await;
+        return groq_passthrough(api_key, decision, payload.messages, &settings, t_start).await;
     }
 
-    groq_tool_agent_loop(api_key, model, payload.messages, &settings, t_start).await
+    groq_tool_agent_loop(api_key, decision, payload.messages, &settings, t_start).await
 }
 
 async fn groq_passthrough(
     api_key: String,
-    model: String,
+    decision: model_router::RouterDecision,
     messages: Vec<OllamaApiMessage>,
     settings: &AppSettings,
     t_start: Instant,
 ) -> Json<serde_json::Value> {
+    let model = decision.model.clone();
     let chat_max = settings.chat_max_tokens.clamp(128, 1024);
     let req_body = serde_json::json!({
         "model": model,
@@ -806,6 +825,9 @@ async fn groq_passthrough(
                             println!("[Groq] text len={} preview='{}'", text.len(), preview);
                             enriched["text"] = serde_json::Value::String(text);
                         }
+                        enriched["model_used"] = serde_json::Value::String(model.clone());
+                        enriched["router_tier"] = serde_json::Value::String(decision.tier.as_str().to_string());
+                        enriched["router_reason"] = serde_json::Value::String(decision.reason.clone());
                         if !status.is_success() {
                             enriched["error"] = serde_json::json!(format!(
                                 "Groq HTTP {}: {}",
@@ -814,7 +836,12 @@ async fn groq_passthrough(
                             ));
                             enriched["status_quiet"] = serde_json::json!("provider error");
                         }
-                        println!("[Groq] done in {} ms", t_start.elapsed().as_millis());
+                        println!(
+                            "[Groq] done in {} ms model_used={} tier={}",
+                            t_start.elapsed().as_millis(),
+                            model,
+                            decision.tier.as_str()
+                        );
                         return Json(enriched);
                     }
                     Err(e) => {
@@ -839,7 +866,7 @@ async fn groq_passthrough(
 }
 async fn groq_tool_agent_loop(
     api_key: String,
-    model: String,
+    mut decision: model_router::RouterDecision,
     messages: Vec<OllamaApiMessage>,
     settings: &AppSettings,
     t_start: Instant,
@@ -848,15 +875,18 @@ async fn groq_tool_agent_loop(
     let allow_shell = settings.tools_allow_shell;
     let client = reqwest::Client::new();
     let url = "https://api.groq.com/openai/v1/chat/completions";
-    let heavy = settings.heavy_model.trim().to_string();
-    let router_on = settings.model_router && !heavy.is_empty();
+    // Re-check complexity for tool-loop entry (same settings-driven models).
     let user_hint = last_user_text(&messages);
-    let mut model = if router_on && message_looks_complex(&user_hint) {
-        println!("[Router] tool-loop start heavy (complex) -> {}", heavy);
-        heavy.clone()
-    } else {
-        model
-    };
+    decision = model_router::resolve_chat(
+        settings.model_router,
+        &settings.groq_model,
+        &settings.heavy_model,
+        &user_hint,
+        false,
+        Some(&decision.model),
+    );
+    decision.log_line("tool_loop_start");
+    let mut model = decision.model.clone();
 
     // Working transcript as JSON values so we can attach tool roles if needed
     let mut msgs: Vec<serde_json::Value> = messages
@@ -1034,9 +1064,15 @@ async fn groq_tool_agent_loop(
         }
 
         println!("[Groq][tools] executing {} call(s)", calls.len());
-        if router_on && model != heavy {
-            println!("[Router] tool-loop upgrade after tool call -> {}", heavy);
-            model = heavy.clone();
+        let upgraded = model_router::upgrade_after_tool(
+            &decision,
+            settings.model_router,
+            &settings.heavy_model,
+        );
+        if upgraded.model != model {
+            upgraded.log_line("tool_loop");
+            decision = upgraded;
+            model = decision.model.clone();
         }
         // Append assistant message (keep tool_calls when native)
         msgs.push(message.clone());
@@ -1123,10 +1159,15 @@ async fn groq_tool_agent_loop(
             "json".into()
         },
     );
+    enriched["model_used"] = serde_json::Value::String(model.clone());
+    enriched["router_tier"] = serde_json::Value::String(decision.tier.as_str().to_string());
+    enriched["router_reason"] = serde_json::Value::String(decision.reason.clone());
     println!(
-        "[Groq][tools] done in {} ms text_len={}",
+        "[Groq][tools] done in {} ms text_len={} model_used={} tier={}",
         t_start.elapsed().as_millis(),
-        final_text.len()
+        final_text.len(),
+        model,
+        decision.tier.as_str()
     );
     Json(enriched)
 }
@@ -1201,6 +1242,61 @@ async fn handle_memory_forget(Json(payload): Json<MemoryForgetRequest>) -> Json<
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct RouterPreviewRequest {
+    #[serde(default)]
+    text: String,
+    #[serde(default)]
+    tools_path: bool,
+    #[serde(default)]
+    vision: bool,
+}
+
+/// Dry-run routing (no provider calls) — light vs heavy vs vision from live settings.
+async fn handle_router_preview(Json(payload): Json<RouterPreviewRequest>) -> Json<serde_json::Value> {
+    let settings = load_settings();
+    if payload.vision {
+        let d = model_router::resolve_vision(&settings.vision_model, &settings.groq_model);
+        d.log_line("preview");
+        return Json(serde_json::json!({
+            "ok": true,
+            "model_used": d.model,
+            "router_tier": d.tier.as_str(),
+            "router_reason": d.reason,
+            "settings": {
+                "model_router": settings.model_router,
+                "groq_model": settings.groq_model,
+                "heavy_model": settings.heavy_model,
+                "vision_model": settings.vision_model,
+                "tools_allow_shell": settings.tools_allow_shell,
+            }
+        }));
+    }
+    let d = model_router::resolve_chat(
+        settings.model_router,
+        &settings.groq_model,
+        &settings.heavy_model,
+        &payload.text,
+        payload.tools_path,
+        None,
+    );
+    d.log_line("preview");
+    Json(serde_json::json!({
+        "ok": true,
+        "model_used": d.model,
+        "router_tier": d.tier.as_str(),
+        "router_reason": d.reason,
+        "complex": model_router::message_looks_complex(&payload.text),
+        "settings": {
+            "model_router": settings.model_router,
+            "groq_model": settings.groq_model,
+            "heavy_model": settings.heavy_model,
+            "vision_model": settings.vision_model,
+            "tools_allow_shell": settings.tools_allow_shell,
+        }
+    }))
+}
+
 async fn handle_tools_status() -> Json<serde_json::Value> {
     let settings = load_settings();
     Json(serde_json::json!({
@@ -1211,6 +1307,7 @@ async fn handle_tools_status() -> Json<serde_json::Value> {
         "vision_max_tokens": settings.vision_max_tokens,
         "groq_model": settings.groq_model,
         "heavy_model": settings.heavy_model,
+        "vision_model": settings.vision_model,
         "model_router": settings.model_router,
         "heavy_provider": settings.heavy_provider,
         "recent": tools::recent_log(),
@@ -1685,53 +1782,9 @@ fn last_user_text(messages: &[OllamaApiMessage]) -> String {
         .unwrap_or_default()
 }
 
-fn message_looks_complex(text: &str) -> bool {
-    let lower = text.to_lowercase();
-    let len = text.chars().count();
-    if len > 220 {
-        return true;
-    }
-    const KEYS: &[&str] = &[
-        "plan", "fix", "debug", "refactor", "implement", "architecture",
-        "stack trace", "compile", "cargo ", "typescript", "python", "rustc",
-        "```", "function ", "class ", "error:", "traceback", "step by step",
-        "compare", "analyze", "write a", "build a", "design a",
-    ];
-    KEYS.iter().any(|k| lower.contains(k))
-}
-
 fn model_needs_reasoning_budget(model: &str) -> bool {
     let m = model.to_lowercase();
     m.contains("gpt-oss") || m.contains("o1") || m.contains("reason")
-}
-
-/// Phase 3 router: heavy_model for tool/planning turns or complex user messages.
-fn resolve_chat_model(
-    settings: &AppSettings,
-    messages: &[OllamaApiMessage],
-    requested: Option<String>,
-    tools_path: bool,
-) -> String {
-    let fast = settings.groq_model.trim().to_string();
-    let requested = requested
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let base = requested.unwrap_or_else(|| fast.clone());
-    let heavy = settings.heavy_model.trim().to_string();
-    if !settings.model_router || heavy.is_empty() {
-        return if base.is_empty() { "qwen/qwen3.8-27b".to_string() } else { base };
-    }
-    let user = last_user_text(messages);
-    let use_heavy = tools_path || message_looks_complex(&user);
-    let chosen = if use_heavy { heavy } else if base.is_empty() { fast } else { base };
-    println!(
-        "[Router] heavy={} tools_path={} complex={} -> {}",
-        settings.model_router,
-        tools_path,
-        message_looks_complex(&user),
-        chosen
-    );
-    chosen
 }
 
 fn default_tts_engine() -> String {
@@ -2627,6 +2680,7 @@ async fn start_http_server(clients: SharedClients) {
         .route("/lilith-emotion", post(handle_lilith_emotion))
         .route("/capture_and_ask", post(handle_capture_and_ask))
         .route("/tools-status", get(handle_tools_status))
+        .route("/router-preview", post(handle_router_preview))
         .route("/tools-debug", post(handle_tools_debug))
         .route("/memory/add", post(handle_memory_add))
         .route("/memory/search", post(handle_memory_search))
