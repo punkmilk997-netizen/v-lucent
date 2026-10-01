@@ -241,7 +241,12 @@ async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<ser
     let default_prompt = "You see a screenshot. Summarize key UI/game HUD, visible text, current state, and likely goal. Keep under 120 words.".to_string();
     let prompt = body.question.unwrap_or(default_prompt);
     let settings_early = load_settings();
-    let max_tokens = body.max_tokens.unwrap_or(settings_early.vision_max_tokens.max(64)).clamp(32, 256);
+    let vision_cap = settings_early.vision_max_tokens.clamp(32, 256);
+    let max_tokens = body
+        .max_tokens
+        .unwrap_or(vision_cap)
+        .min(vision_cap)
+        .clamp(32, 256);
 
     println!("[capture] request received");
 

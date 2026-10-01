@@ -1351,6 +1351,18 @@
     return false;
   }
 
+  function clipLiveReaction(raw: string): string {
+    const words = (raw || "").trim().split(/\s+/).filter(Boolean);
+    if (words.length <= 18) return words.join(" ");
+    return words.slice(0, 18).join(" ");
+  }
+
+  function liveWatchMaxTokens(): number {
+    const cap = Math.max(32, Math.min(256, Number(settings.vision_max_tokens) || 192));
+    // Live reactions stay short; never request more than the user vision cap.
+    return Math.max(32, Math.min(96, cap));
+  }
+
   function stopLiveScreenWatch() {
     liveWatchGeneration += 1;
     if (liveWatchTimer) {
@@ -1398,7 +1410,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: LIVE_WATCH_PROMPT,
-          max_tokens: 96,
+          max_tokens: liveWatchMaxTokens(),
         }),
       });
       if (gen !== liveWatchGeneration) return;
@@ -1431,12 +1443,13 @@
         liveWatchStatus = "watching · quiet";
         console.log("[LiveWatch] silent");
       } else {
-        lastLiveReactionNorm = normalizeLiveText(reaction);
+        const spoken = clipLiveReaction(reaction);
+        lastLiveReactionNorm = normalizeLiveText(spoken);
         liveWatchStatus = "reacting";
-        console.log("[LiveWatch] speak:", reaction.slice(0, 80));
+        console.log("[LiveWatch] speak:", spoken.slice(0, 80));
         // Do NOT push into chatMessages — voice-only live reaction
         try {
-          await speakText(reaction);
+          await speakText(spoken);
         } catch (e) {
           console.warn("[LiveWatch] TTS failed", e);
         }
