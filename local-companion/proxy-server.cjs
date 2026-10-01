@@ -22,6 +22,19 @@ const OPENCLAW_URL = (process.env.OPENCLAW_URL || '').replace(/\/$/, '');
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
 const PROXY_PORT = Number(process.env.PROXY_PORT || 3032);
 
+function redact(value) {
+  if (value == null) return value;
+  const s = typeof value === 'string' ? value : JSON.stringify(value);
+  return s
+    .replace(/(Bearer\s+)\S+/gi, '$1[REDACTED]')
+    .replace(/(Token\s+)\S+/gi, '$1[REDACTED]')
+    .replace(/(GATEWAY_TOKEN\s*[=:]\s*)\S+/gi, '$1[REDACTED]')
+    .replace(/sk-[A-Za-z0-9_-]+/g, 'sk-[REDACTED]')
+    .replace(/gsk_[A-Za-z0-9_-]+/g, 'gsk_[REDACTED]');
+}
+
+
+
 if (!OPENCLAW_URL) {
   console.error('[Proxy] FATAL: set OPENCLAW_URL (e.g. http://127.0.0.1:3031). Refusing to start with a hardcoded host.');
   process.exit(1);
@@ -52,12 +65,12 @@ app.post('/api/command', async (req, res) => {
       console.log('[Proxy] ✗ Connection failed:');
       console.log('  Status:', error.response?.status);
       console.log('  Message:', error.message);
-      console.log('  Data:', error.response?.data);
+      console.log('  Data:', redact(error.response?.data));
       throw error;
     }
     
     const data = openclaw_response.data;
-    console.log('[Proxy] OpenClaw response:', data);
+    console.log('[Proxy] OpenClaw response:', redact(data));
     
     const response_data = {
       text: data.text || data.message || data.response || 'Cevap alınamadı',
@@ -69,7 +82,7 @@ app.post('/api/command', async (req, res) => {
     res.json(response_data);
     
   } catch (error) {
-    console.error('[Proxy] Error:', error.message);
+    console.error('[Proxy] Error:', redact(error.message));
     
     res.status(500).json({
       text: `Hata: ${error.message}`,

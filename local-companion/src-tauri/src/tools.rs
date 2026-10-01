@@ -44,7 +44,7 @@ pub fn push_log(name: &str, ok: bool, detail: impl Into<String>) {
         name: name.to_string(),
         ok,
         detail: {
-            let mut d = detail.into();
+            let mut d = crate::privacy::redact_secrets(&detail.into());
             if d.len() > 240 {
                 d.truncate(237);
                 d.push_str("...");
@@ -270,15 +270,157 @@ fn user_profile() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("C:\\Users\\Public"))
 }
 
+/// Windows Known Folder IDs (Desktop / Documents / Downloads).
+#[cfg(windows)]
+mod known_folders {
+    use std::path::PathBuf;
+    use std::ptr;
+
+    #[repr(C)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    // FOLDERID_Desktop {B4BFCC3A-DB2C-424C-B029-7FE99A87C641}
+    const DESKTOP: Guid = Guid {
+        data1: 0xB4BFCC3A,
+        data2: 0xDB2C,
+        data3: 0x424C,
+        data4: [0xB0, 0x29, 0x7F, 0xE9, 0x9A, 0x87, 0xC6, 0x41],
+    };
+    // FOLDERID_Documents {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
+    const DOCUMENTS: Guid = Guid {
+        data1: 0xFDD39AD0,
+        data2: 0x238F,
+        data3: 0x46AF,
+        data4: [0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7],
+    };
+    // FOLDERID_Downloads {374DE290-123F-4565-9164-39C4925E467B}
+    const DOWNLOADS: Guid = Guid {
+        data1: 0x374DE290,
+        data2: 0x123F,
+        data3: 0x4565,
+        data4: [0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B],
+    };
+
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHGetKnownFolderPath(
+            rfid: *const Guid,
+            dw_flags: u32,
+            h_token: *mut core::ffi::c_void,
+            ppsz_path: *mut *mut u16,
+        ) -> i32;
+    }
+
+    #[link(name = "ole32")]
+    extern "system" {
+        fn CoTaskMemFree(pv: *mut core::ffi::c_void);
+    }
+
+    fn get(folder: &Guid) -> Option<PathBuf> {
+        unsafe {
+            let mut path_ptr: *mut u16 = ptr::null_mut();
+            let hr = SHGetKnownFolderPath(folder, 0, ptr::null_mut(), &mut path_ptr);
+            if hr < 0 || path_ptr.is_null() {
+                return None;
+            }
+            let mut len = 0usize;
+            while *path_ptr.add(len) != 0 {
+                len += 1;
+            }
+            let slice = std::slice::from_raw_parts(path_ptr, len);
+            let path = String::from_utf16_lossy(slice);
+            CoTaskMemFree(path_ptr as *mut core::ffi::c_void);
+            Some(PathBuf::from(path))
+        }
+    }
+
+    pub fn desktop() -> Option<PathBuf> {
+        get(&DESKTOP)
+    }
+    pub fn documents() -> Option<PathBuf> {
+        get(&DOCUMENTS)
+    }
+    pub fn downloads() -> Option<PathBuf> {
+        get(&DOWNLOADS)
+    }
+}
+
+fn push_unique(out: &mut Vec<PathBuf>, p: PathBuf) {
+    if out.iter().any(|x| x == &p) {
+        return;
+    }
+    out.push(p);
+}
+
+fn folder_desktop() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(p) = known_folders::desktop() {
+            return p;
+        }
+    }
+    user_profile().join("Desktop")
+}
+
+fn folder_documents() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(p) = known_folders::documents() {
+            return p;
+        }
+    }
+    user_profile().join("Documents")
+}
+
+fn folder_downloads() -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(p) = known_folders::downloads() {
+            return p;
+        }
+    }
+    user_profile().join("Downloads")
+}
+
+/// OneDrive-safe allowlist roots: Known Folder APIs first, then profile paths,
+/// then OneDrive env Desktop/Documents/Downloads when those dirs exist.
 fn allowlist_roots() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let desktop = folder_desktop();
+    let documents = folder_documents();
+    let downloads = folder_downloads();
+
+    push_unique(&mut roots, desktop.join("desktop-assistant"));
+    push_unique(&mut roots, desktop.clone());
+    push_unique(&mut roots, documents);
+    push_unique(&mut roots, downloads);
+
+    // Classic %USERPROFILE% paths (may differ from redirected Known Folders).
     let home = user_profile();
-    let desktop = home.join("Desktop");
-    vec![
-        desktop.join("desktop-assistant"),
-        desktop.clone(),
-        home.join("Documents"),
-        home.join("Downloads"),
-    ]
+    push_unique(&mut roots, home.join("Desktop").join("desktop-assistant"));
+    push_unique(&mut roots, home.join("Desktop"));
+    push_unique(&mut roots, home.join("Documents"));
+    push_unique(&mut roots, home.join("Downloads"));
+
+    // OneDrive env roots (consumer/commercial) when present on disk.
+    for env_key in ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"] {
+        if let Ok(od) = env::var(env_key) {
+            let base = PathBuf::from(od);
+            for name in ["Desktop", "Documents", "Downloads"] {
+                let p = base.join(name);
+                if p.is_dir() {
+                    push_unique(&mut roots, p);
+                }
+            }
+        }
+    }
+
+    roots
 }
 
 fn resolve_user_path(raw: &str) -> Result<PathBuf, String> {
@@ -287,13 +429,12 @@ fn resolve_user_path(raw: &str) -> Result<PathBuf, String> {
         return Err("path is empty".into());
     }
     let lower = trimmed.to_lowercase();
-    let home = user_profile();
     let candidate = match lower.as_str() {
-        "desktop" | "~\\desktop" | "~/desktop" => home.join("Desktop"),
-        "documents" | "~\\documents" | "~/documents" | "docs" => home.join("Documents"),
-        "downloads" | "~\\downloads" | "~/downloads" => home.join("Downloads"),
+        "desktop" | "~\\desktop" | "~/desktop" => folder_desktop(),
+        "documents" | "~\\documents" | "~/documents" | "docs" => folder_documents(),
+        "downloads" | "~\\downloads" | "~/downloads" => folder_downloads(),
         "desktop-assistant" | "desktop\\desktop-assistant" | "desktop/desktop-assistant" => {
-            home.join("Desktop").join("desktop-assistant")
+            folder_desktop().join("desktop-assistant")
         }
         _ => {
             let p = PathBuf::from(trimmed);
@@ -301,7 +442,7 @@ fn resolve_user_path(raw: &str) -> Result<PathBuf, String> {
                 p
             } else {
                 // Relative paths resolve under Desktop by default
-                home.join("Desktop").join(trimmed)
+                folder_desktop().join(trimmed)
             }
         }
     };
@@ -830,4 +971,63 @@ pub fn strip_tool_protocol(text: &str) -> String {
         lines.push(line);
     }
     lines.join("\n").trim().to_string()
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowlist_includes_known_folders() {
+        let roots = allowlist_roots();
+        assert!(!roots.is_empty(), "roots empty");
+        let desk = folder_desktop();
+        assert!(
+            roots.iter().any(|r| r == &desk),
+            "desktop known folder missing from roots: desk={:?} roots={:?}",
+            desk,
+            roots
+        );
+        let docs = folder_documents();
+        assert!(roots.iter().any(|r| r == &docs), "documents missing");
+        let dl = folder_downloads();
+        assert!(roots.iter().any(|r| r == &dl), "downloads missing");
+        // Shortcuts resolve under allowlist
+        let p = resolve_user_path("Desktop").expect("Desktop shortcut");
+        ensure_allowlisted(&p).expect("desktop allowlisted");
+    }
+
+    #[test]
+    fn allowlist_blocks_appdata() {
+        let home = user_profile();
+        let appdata = home.join("AppData").join("Roaming").join("secrets.txt");
+        let err = ensure_allowlisted(&appdata).unwrap_err();
+        assert!(
+            err.to_lowercase().contains("blocked") || err.to_lowercase().contains("allowlist"),
+            "{}",
+            err
+        );
+    }
+
+    #[test]
+    fn onedrive_env_root_included_when_dir_exists() {
+        let tmp = std::env::temp_dir().join(format!("noctelle_od_test_{}", now_ms()));
+        let desk = tmp.join("Desktop");
+        let _ = fs::create_dir_all(&desk);
+        // SAFETY: single-threaded test lock not needed if we restore env
+        let prev = env::var_os("OneDrive");
+        env::set_var("OneDrive", &tmp);
+        let roots = allowlist_roots();
+        match prev {
+            Some(v) => env::set_var("OneDrive", v),
+            None => env::remove_var("OneDrive"),
+        }
+        let _ = fs::remove_dir_all(&tmp);
+        assert!(
+            roots.iter().any(|r| r == &desk),
+            "OneDrive Desktop should be in roots: {:?}",
+            roots
+        );
+    }
 }

@@ -2404,6 +2404,7 @@
             <button class="fetch-models-btn" onclick={() => fetchModels()} disabled={loadingModels}>
               {loadingModels ? "Loading..." : "Fetch Models"}
             </button>
+            <p class="input-hint">Offline: empty endpoint falls back to http://127.0.0.1:11434 (`ollama serve`). No API key for Ollama chat.</p>
           </div>
 
           <div class="settings-group">

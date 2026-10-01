@@ -41,6 +41,7 @@ mod tools;
 mod memory;
 mod model_router;
 mod agency;
+mod privacy;
 
 type ClientMap = Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<Message>>>>;
 
@@ -394,8 +395,8 @@ async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<ser
     };
     println!("[capture] status={} len={}", status, text.len());
     if !status.is_success() {
-        println!("[capture] body sample: {}", &text.chars().take(500).collect::<String>());
-        return Json(json!({"error": format!("HTTP {}: {}", status, text)}));
+        crate::privacy::safe_log(format!("[capture] body sample: {}", &text.chars().take(500).collect::<String>()));
+        return Json(json!({"error": format!("HTTP {}: {}", status, crate::privacy::redact_secrets(&text))}));
     }
     let parsed: serde_json::Value = match serde_json::from_str(&text) {
         Ok(v) => v,
@@ -651,7 +652,7 @@ fn start_vision_service(settings: &AppSettings) -> Result<(), String> {
         .env("VISION_OLLAMA_ENDPOINT", ollama_endpoint)
         .env("VISION_OPENCLAW_ENDPOINT", openclaw_endpoint);
 
-    println!("[VISION] Starting service: {:?}", cmd);
+    crate::privacy::safe_log(format!("[VISION] Starting service (env redacted) bin={:?}", cmd.get_program()));
     cmd.spawn()
         .map_err(|e| format!("Failed to start vision service: {}", e))?;
     Ok(())
