@@ -37,6 +37,9 @@ use tower_http::cors::CorsLayer;
 use tauri_plugin_fs;
 use std::time::{Duration, Instant};
 
+mod tools;
+mod memory;
+
 type ClientMap = Arc<Mutex<HashMap<String, tokio::sync::mpsc::UnboundedSender<Message>>>>;
 
 // === Local emotion classifier (MiniLM ONNX + prototype cosine) ===
@@ -52,49 +55,49 @@ const EMOTION_LABELS: [&str; 11] = [
 fn proto_texts() -> HashMap<&'static str, Vec<&'static str>> {
     HashMap::from([
         ("happy", vec![
-            "I’m so happy right now.", "This makes me smile.", "I feel joyful and light.",
-            "That’s wonderful news.", "I’m delighted with this.", "I’m in a great mood.",
-            "I’m thrilled.", "This is fantastic.", "I’m really pleased.", "Everything feels bright.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m so happy right now.", "This makes me smile.", "I feel joyful and light.",
+            "ThatÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s wonderful news.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m delighted with this.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m in a great mood.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m thrilled.", "This is fantastic.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m really pleased.", "Everything feels bright.",
         ]),
         ("sad", vec![
-            "I feel really down today.", "This makes me want to cry.", "I’m heartbroken.",
-            "I feel empty inside.", "I’m overwhelmed by sadness.", "I’m feeling blue.",
-            "I’m disappointed.", "I’m sorrowful.", "This hurts deeply.", "I’m upset and low.",
+            "I feel really down today.", "This makes me want to cry.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m heartbroken.",
+            "I feel empty inside.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m overwhelmed by sadness.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m feeling blue.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m disappointed.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m sorrowful.", "This hurts deeply.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m upset and low.",
         ]),
         ("angry", vec![
-            "This makes me furious.", "I’m really annoyed right now.", "I can’t stand this anymore.",
-            "I’m fuming with anger.", "This really ticks me off.", "I’m enraged.", "I’m boiling with anger.",
-            "This frustrates me.", "I’m livid about this.", "I’m mad right now.",
+            "This makes me furious.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m really annoyed right now.", "I canÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢t stand this anymore.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m fuming with anger.", "This really ticks me off.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m enraged.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m boiling with anger.",
+            "This frustrates me.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m livid about this.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m mad right now.",
         ]),
         ("surprise", vec![
-            "Wow, I didn’t expect that.", "That’s a shocker.", "I’m completely surprised.",
-            "This caught me off guard.", "I can’t believe it happened.", "That was unexpected.",
-            "I’m astonished.", "I’m startled by this.", "This is surprising.", "I’m amazed right now.",
+            "Wow, I didnÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢t expect that.", "ThatÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s a shocker.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m completely surprised.",
+            "This caught me off guard.", "I canÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢t believe it happened.", "That was unexpected.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m astonished.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m startled by this.", "This is surprising.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m amazed right now.",
         ]),
         ("fear", vec![
-            "I’m scared of this.", "This makes me nervous.", "I feel threatened.",
-            "I’m afraid of what’s next.", "This is frightening me.", "I’m worried and tense.",
-            "I’m anxious about this.", "This terrifies me.", "I’m uneasy right now.", "I feel danger coming.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m scared of this.", "This makes me nervous.", "I feel threatened.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m afraid of whatÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s next.", "This is frightening me.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m worried and tense.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m anxious about this.", "This terrifies me.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m uneasy right now.", "I feel danger coming.",
         ]),
         ("neutral", vec![
             "I have no strong feelings about this.", "This seems ordinary.", "I feel indifferent.",
-            "Nothing stands out here.", "I’m just observing calmly.", "I’m neutral on this.",
-            "It’s neither good nor bad.", "I’m fine either way.", "This is okay.", "I’m steady and calm.",
+            "Nothing stands out here.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m just observing calmly.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m neutral on this.",
+            "ItÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s neither good nor bad.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m fine either way.", "This is okay.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m steady and calm.",
         ]),
         ("relaxed", vec![
-            "I feel calm and at ease.", "This is soothing.", "I’m chilling peacefully.",
-            "I’m comfortable and relaxed.", "Everything feels tranquil.", "I’m unwinding now.",
-            "This is restful.", "I’m serene.", "I’m cool and easygoing.", "This is calming me.",
+            "I feel calm and at ease.", "This is soothing.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m chilling peacefully.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m comfortable and relaxed.", "Everything feels tranquil.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m unwinding now.",
+            "This is restful.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m serene.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m cool and easygoing.", "This is calming me.",
         ]),
         ("horny", vec![
-            "I’m feeling really horny right now.", "You’re turning me on so much.", "I’m craving your touch.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m feeling really horny right now.", "YouÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢re turning me on so much.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m craving your touch.",
             "I feel intensely aroused.", "You make me wet just thinking about you.", "You make me hard just thinking about you.",
-            "I’m burning with desire.", "I’m dripping with need.", "I’m in a lustful mood.", "I need you badly.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m burning with desire.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m dripping with need.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m in a lustful mood.", "I need you badly.",
         ]),
         ("aroused", vec![
-            "I’m getting so aroused.", "That’s making my body react.", "I feel heat rising inside me.",
-            "I’m in a sensual mood.", "This is stirring me up.", "I’m feeling flushed.", "I’m excited physically.",
-            "I’m warming up with desire.", "This is turning me on gently.", "I’m starting to crave more.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m getting so aroused.", "ThatÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢s making my body react.", "I feel heat rising inside me.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m in a sensual mood.", "This is stirring me up.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m feeling flushed.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m excited physically.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m warming up with desire.", "This is turning me on gently.", "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m starting to crave more.",
         ]),
         ("dominant", vec![
             "I own you. You will kneel to me.",
@@ -115,7 +118,7 @@ fn proto_texts() -> HashMap<&'static str, Vec<&'static str>> {
             "I kneel for you and wait for instructions.",
             "Your control over me is total; I comply.",
             "I accept punishment and submit to your rule.",
-            "I’m devoted to obeying you completely.",
+            "IÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢m devoted to obeying you completely.",
             "I follow every command you give without question.",
             "I am beneath you and ready to serve.",
             "I crave to be under your control and direction.",
@@ -237,6 +240,8 @@ fn start_stt_daemon(settings: &AppSettings) -> Result<(), String> {
 async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<serde_json::Value> {
     let default_prompt = "You see a screenshot. Summarize key UI/game HUD, visible text, current state, and likely goal. Keep under 120 words.".to_string();
     let prompt = body.question.unwrap_or(default_prompt);
+    let settings_early = load_settings();
+    let max_tokens = body.max_tokens.unwrap_or(settings_early.vision_max_tokens.max(64)).clamp(32, 256);
 
     println!("[capture] request received");
 
@@ -278,11 +283,15 @@ async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<ser
     };
     let model = if !settings.vision_model.trim().is_empty() {
         settings.vision_model.trim().to_string()
+    } else if provider.eq_ignore_ascii_case("groq") && !settings.groq_model.trim().is_empty() {
+        settings.groq_model.trim().to_string()
     } else {
         settings.openrouter_provider.trim().to_string()
     };
     let api_key = if !settings.vision_api_key.trim().is_empty() {
         settings.vision_api_key.trim().to_string()
+    } else if provider.eq_ignore_ascii_case("groq") && !settings.groq_api_key.trim().is_empty() {
+        settings.groq_api_key.trim().to_string()
     } else {
         settings.openrouter_api_key.trim().to_string()
     };
@@ -339,9 +348,10 @@ async fn handle_capture_and_ask(Json(body): Json<CaptureAskRequest>) -> Json<ser
                             {"type": "text", "text": prompt},
                             {"type": "image_url", "image_url": {"url": data_url}}
                         ]
-                    }]
+                    }],
+                    "max_tokens": max_tokens
                 });
-                println!("[capture] sending to {}", url);
+                println!("[capture] sending to {} max_tokens={}", url, max_tokens);
                 client.post(url).headers(headers).json(&body).send().await
             }
             "ollama" => {
@@ -555,6 +565,8 @@ struct VisionLatestResponse {
 #[derive(Debug, Deserialize)]
 struct CaptureAskRequest {
     question: Option<String>,
+    #[serde(default)]
+    max_tokens: Option<u32>,
 }
 
 fn start_vision_service(settings: &AppSettings) -> Result<(), String> {
@@ -660,7 +672,7 @@ async fn fetch_vision_latest(settings: &AppSettings) -> Option<String> {
     }
 }
 
-// HTTP handler for Groq chat (OpenAI-compatible)
+// HTTP handler for Groq chat (OpenAI-compatible) — Phase 1 tool agent loop
 async fn handle_groq_chat(
     Json(payload): Json<GroqChatRequest>,
 ) -> Json<serde_json::Value> {
@@ -669,6 +681,33 @@ async fn handle_groq_chat(
 
     let settings = load_settings();
     let mut payload = payload;
+    if settings.memory_enabled {
+        let hint = payload
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
+        let mem_block = memory::format_context_block(hint, 1000);
+        if !mem_block.is_empty() {
+            println!("[Groq] injecting memory block chars={}", mem_block.len());
+            payload.messages.insert(
+                0,
+                OllamaApiMessage {
+                    role: "system".to_string(),
+                    content: mem_block,
+                },
+            );
+        }
+        payload.messages.insert(
+            0,
+            OllamaApiMessage {
+                role: "system".to_string(),
+                content: memory::memory_note_for_prompt().to_string(),
+            },
+        );
+    }
     if let Some(summary) = fetch_vision_latest(&settings).await {
         println!("[Groq] injecting screen_summary");
         payload.messages.push(OllamaApiMessage {
@@ -677,79 +716,526 @@ async fn handle_groq_chat(
         });
     }
     let api_key = settings.groq_api_key.trim().to_string();
-    let model = payload
-        .model
-        .unwrap_or_else(|| settings.groq_model.clone())
-        .trim()
-        .to_string();
+    // Fast vs heavy by message complexity first; tool loop upgrades to heavy when router on.
+    let model = resolve_chat_model(
+        &settings,
+        &payload.messages,
+        payload.model.clone(),
+        false,
+    );
 
     let msg_count = payload.messages.len();
     let first_preview = payload
         .messages
         .get(0)
-        .and_then(|m| Some(m.content.chars().take(120).collect::<String>()))
+        .map(|m| m.content.chars().take(120).collect::<String>())
         .unwrap_or_default();
-    println!("[Groq] model='{}' messages={} first='{}'", model, msg_count, first_preview);
+    println!("[Groq] model='{}' messages={} first='{}' tools_enabled={}", model, msg_count, first_preview, settings.tools_enabled);
 
     if api_key.is_empty() {
-        println!("[Groq] ✗ Missing API key");
+        println!("[Groq] Missing API key");
         return Json(serde_json::json!({"error": "Groq API key is missing"}));
     }
     if model.is_empty() {
-        println!("[Groq] ✗ Missing model");
+        println!("[Groq] Missing model");
         return Json(serde_json::json!({"error": "Groq model is missing"}));
     }
 
+    if !settings.tools_enabled {
+        return groq_passthrough(api_key, model, payload.messages, &settings, t_start).await;
+    }
+
+    groq_tool_agent_loop(api_key, model, payload.messages, &settings, t_start).await
+}
+
+async fn groq_passthrough(
+    api_key: String,
+    model: String,
+    messages: Vec<OllamaApiMessage>,
+    settings: &AppSettings,
+    t_start: Instant,
+) -> Json<serde_json::Value> {
+    let chat_max = settings.chat_max_tokens.clamp(128, 1024);
     let req_body = serde_json::json!({
         "model": model,
-        "messages": payload.messages,
+        "messages": messages,
+        "max_tokens": chat_max,
+        "temperature": 0.55,
     });
-
     let client = reqwest::Client::new();
     let url = "https://api.groq.com/openai/v1/chat/completions";
+    let mut backoff_ms: u64 = 1500;
+    let mut last_err = String::new();
+    for attempt in 0..4u32 {
+        let t_request = Instant::now();
+        match client
+            .post(url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .json(&req_body)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                let status = response.status();
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => {
+                        let dt = t_request.elapsed().as_millis();
+                        println!("[Groq] Response status: {} ({} ms) attempt={}", status, dt, attempt + 1);
+                        if status.as_u16() == 429 {
+                            last_err = format!("rate limited (429); backing off {}ms", backoff_ms);
+                            println!("[Groq] {}", last_err);
+                            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                            backoff_ms = (backoff_ms * 2).min(30000);
+                            continue;
+                        }
+                        let content = data
+                            .get("choices")
+                            .and_then(|c| c.get(0))
+                            .and_then(|c| c.get("message"))
+                            .and_then(|m| m.get("content"))
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.to_string());
+                        let mut enriched = data.clone();
+                        if let Some(text) = content {
+                            let preview: String = text.chars().take(120).collect();
+                            println!("[Groq] text len={} preview='{}'", text.len(), preview);
+                            enriched["text"] = serde_json::Value::String(text);
+                        }
+                        if !status.is_success() {
+                            enriched["error"] = serde_json::json!(format!(
+                                "Groq HTTP {}: {}",
+                                status,
+                                data.get("error").unwrap_or(&data)
+                            ));
+                            enriched["status_quiet"] = serde_json::json!("provider error");
+                        }
+                        println!("[Groq] done in {} ms", t_start.elapsed().as_millis());
+                        return Json(enriched);
+                    }
+                    Err(e) => {
+                        println!("[Groq] Parse error: {}", e);
+                        return Json(serde_json::json!({"error": format!("Failed to parse response: {}", e)}));
+                    }
+                }
+            }
+            Err(e) => {
+                let dt = t_request.elapsed().as_millis();
+                println!("[Groq] Connection error ({} ms): {}", dt, e);
+                last_err = format!("Failed to reach Groq: {}", e);
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                backoff_ms = (backoff_ms * 2).min(30000);
+            }
+        }
+    }
+    Json(serde_json::json!({
+        "error": last_err,
+        "status_quiet": "rate-limited · quiet retry later",
+    }))
+}
+async fn groq_tool_agent_loop(
+    api_key: String,
+    model: String,
+    messages: Vec<OllamaApiMessage>,
+    settings: &AppSettings,
+    t_start: Instant,
+) -> Json<serde_json::Value> {
+    const MAX_ROUNDS: usize = 3;
+    let allow_shell = settings.tools_allow_shell;
+    let client = reqwest::Client::new();
+    let url = "https://api.groq.com/openai/v1/chat/completions";
+    let heavy = settings.heavy_model.trim().to_string();
+    let router_on = settings.model_router && !heavy.is_empty();
+    let user_hint = last_user_text(&messages);
+    let mut model = if router_on && message_looks_complex(&user_hint) {
+        println!("[Router] tool-loop start heavy (complex) -> {}", heavy);
+        heavy.clone()
+    } else {
+        model
+    };
 
-    let t_request = Instant::now();
-    match client
-        .post(url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .json(&req_body)
-        .send()
-        .await
-    {
-        Ok(response) => {
-            let status = response.status();
-            match response.json::<serde_json::Value>().await {
-                Ok(data) => {
-                    let dt = t_request.elapsed().as_millis();
-                    println!("[Groq] Response status: {} ({} ms)", status, dt);
-                    let content = data
+    // Working transcript as JSON values so we can attach tool roles if needed
+    let mut msgs: Vec<serde_json::Value> = messages
+        .into_iter()
+        .map(|m| serde_json::json!({"role": m.role, "content": m.content}))
+        .collect();
+
+    // Inject tool protocol once (after existing system prompts)
+    let tool_prompt = tools::json_tool_protocol_prompt(allow_shell);
+    msgs.insert(
+        0,
+        serde_json::json!({
+            "role": "system",
+            "content": tool_prompt
+        }),
+    );
+
+    let schemas = tools::tool_schemas(allow_shell);
+    let mut use_native_tools = true;
+    let mut tool_trace: Vec<serde_json::Value> = Vec::new();
+    let mut last_raw: serde_json::Value = serde_json::json!({});
+    let mut final_text = String::new();
+
+    for round in 0..MAX_ROUNDS {
+        let chat_max = settings.chat_max_tokens.clamp(128, 1024);
+        let is_finalish = round + 1 >= MAX_ROUNDS;
+        let mut round_max = if is_finalish { chat_max } else { 256 };
+        if model_needs_reasoning_budget(&model) {
+            // gpt-oss burns completion tokens on hidden reasoning
+            round_max = if is_finalish { chat_max.max(768) } else { 512 };
+        }
+        let round_temp = if is_finalish { 0.55 } else { 0.4 };
+        let mut req_body = serde_json::json!({
+            "model": model,
+            "messages": msgs,
+            "max_tokens": round_max,
+            "temperature": round_temp,
+        });
+        if use_native_tools {
+            req_body["tools"] = serde_json::Value::Array(schemas.clone());
+            req_body["tool_choice"] = serde_json::json!("auto");
+        }
+
+        println!("[Groq][tools] round={} native={} msgs={}", round + 1, use_native_tools, msgs.len());
+
+        let mut backoff_ms: u64 = 1500;
+        let (status, data) = {
+            let mut got = None;
+            for attempt in 0..4u32 {
+                let response = match client
+                    .post(url)
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .json(&req_body)
+                    .send()
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        println!("[Groq][tools] connect err attempt={}: {}", attempt + 1, e);
+                        tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                        backoff_ms = (backoff_ms * 2).min(30000);
+                        continue;
+                    }
+                };
+                let status = response.status();
+                let data: serde_json::Value = match response.json().await {
+                    Ok(d) => d,
+                    Err(e) => {
+                        return Json(serde_json::json!({"error": format!("Failed to parse response: {}", e)}));
+                    }
+                };
+                if status.as_u16() == 429 {
+                    println!("[Groq][tools] 429 backoff {}ms attempt={}", backoff_ms, attempt + 1);
+                    tools::push_log("agent", false, format!("429 backoff {}ms", backoff_ms));
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    backoff_ms = (backoff_ms * 2).min(30000);
+                    got = Some((status, data));
+                    continue;
+                }
+                got = Some((status, data));
+                break;
+            }
+            match got {
+                Some(pair) => pair,
+                None => {
+                    return Json(serde_json::json!({
+                        "error": "Failed to reach Groq after retries",
+                        "status_quiet": "rate-limited · quiet retry later",
+                    }));
+                }
+            }
+        };
+        last_raw = data.clone();
+
+        // If native tools unsupported, retry this round without them
+        if !status.is_success() {
+            if status.as_u16() == 429 {
+                return Json(serde_json::json!({
+                    "error": format!("Groq HTTP 429: {}", data.get("error").unwrap_or(&data)),
+                    "status_quiet": "rate-limited · quiet retry later",
+                }));
+            }
+            let err_s = data.to_string();
+            let tools_rejected = err_s.to_lowercase().contains("tool")
+                || err_s.to_lowercase().contains("function")
+                || status.as_u16() == 400;
+            if use_native_tools && tools_rejected {
+                println!("[Groq][tools] native tools rejected ({}), falling back to JSON protocol", status);
+                use_native_tools = false;
+                tools::push_log("agent", false, format!("native tools unsupported; JSON protocol"));
+                continue;
+            }
+            return Json(serde_json::json!({
+                "error": format!("Groq HTTP {}: {}", status, data.get("error").unwrap_or(&data)),
+                "status_quiet": "provider error",
+            }));
+        }
+
+        let message = data
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+
+        let content = message
+            .get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        // Collect native tool_calls if any
+        let mut calls: Vec<(String, serde_json::Value, Option<String>)> = Vec::new();
+        if let Some(arr) = message.get("tool_calls").and_then(|t| t.as_array()) {
+            for tc in arr {
+                let id = tc.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let name = tc
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args_str = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|a| a.as_str())
+                    .unwrap_or("{}");
+                let args: serde_json::Value =
+                    serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                if !name.is_empty() {
+                    calls.push((name, args, id));
+                }
+            }
+        }
+
+        // JSON protocol fallback from text
+        if calls.is_empty() {
+            for (name, args) in tools::parse_tool_calls_from_text(&content) {
+                calls.push((name, args, None));
+            }
+        }
+
+        if calls.is_empty() {
+            final_text = tools::strip_tool_protocol(&content);
+            if final_text.trim().is_empty() {
+                final_text = content;
+            }
+            println!(
+                "[Groq][tools] final reply len={} rounds={} protocol={}",
+                final_text.len(),
+                round + 1,
+                if use_native_tools { "native+json" } else { "json" }
+            );
+            break;
+        }
+
+        println!("[Groq][tools] executing {} call(s)", calls.len());
+        if router_on && model != heavy {
+            println!("[Router] tool-loop upgrade after tool call -> {}", heavy);
+            model = heavy.clone();
+        }
+        // Append assistant message (keep tool_calls when native)
+        msgs.push(message.clone());
+
+        for (name, args, id) in calls {
+            let result = tools::execute_tool(&name, &args, allow_shell);
+            tool_trace.push(serde_json::json!({
+                "name": name,
+                "ok": !result.starts_with("ERROR:"),
+                "preview": result.chars().take(160).collect::<String>(),
+            }));
+            if let Some(tool_call_id) = id {
+                msgs.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": result,
+                }));
+            } else {
+                msgs.push(serde_json::json!({
+                    "role": "user",
+                    "content": format!("TOOL_RESULT {}:\n{}", name, result),
+                }));
+            }
+        }
+
+        if round + 1 == MAX_ROUNDS {
+            // Force a final natural-language answer
+            msgs.push(serde_json::json!({
+                "role": "system",
+                "content": "Tool budget reached. Give your final short natural-language answer now. Do not call more tools."
+            }));
+            let req_final = serde_json::json!({
+                "model": model,
+                "messages": msgs,
+                "max_tokens": settings.chat_max_tokens.clamp(128, 1024),
+                "temperature": 0.55,
+            });
+            if let Ok(resp) = client
+                .post(url)
+                .header("Authorization", format!("Bearer {}", api_key))
+                .json(&req_final)
+                .send()
+                .await
+            {
+                if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    last_raw = data.clone();
+                    final_text = data
                         .get("choices")
                         .and_then(|c| c.get(0))
                         .and_then(|c| c.get("message"))
                         .and_then(|m| m.get("content"))
                         .and_then(|c| c.as_str())
-                        .map(|s| s.to_string());
-                    let mut enriched = data.clone();
-                    if let Some(text) = content {
-                        let preview: String = text.chars().take(120).collect();
-                        println!("[Groq] text len={} preview='{}'", text.len(), preview);
-                        enriched["text"] = serde_json::Value::String(text);
-                    }
-                    println!("[Groq] done in {} ms", t_start.elapsed().as_millis());
-                    Json(enriched)
-                }
-                Err(e) => {
-                    println!("[Groq] ✗ Parse error: {}", e);
-                    Json(serde_json::json!({"error": format!("Failed to parse response: {}", e)}))
+                        .unwrap_or("")
+                        .to_string();
+                    final_text = tools::strip_tool_protocol(&final_text);
                 }
             }
-        }
-        Err(e) => {
-            let dt = t_request.elapsed().as_millis();
-            println!("[Groq] ✗ Connection error ({} ms): {}", dt, e);
-            Json(serde_json::json!({"error": format!("Failed to reach Groq: {}", e)}))
+            if final_text.trim().is_empty() {
+                final_text = "I ran into my tool limit, but I am still here — try asking again a bit simpler?".to_string();
+            }
         }
     }
+
+    if final_text.trim().is_empty() {
+        // last content fallback
+        final_text = last_raw
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .unwrap_or("Sorry, I blanked for a second — try that again?")
+            .to_string();
+        final_text = tools::strip_tool_protocol(&final_text);
+    }
+
+    let mut enriched = last_raw.clone();
+    enriched["text"] = serde_json::Value::String(final_text.clone());
+    enriched["tool_trace"] = serde_json::Value::Array(tool_trace);
+    enriched["tools_protocol"] = serde_json::Value::String(
+        if use_native_tools {
+            "native_or_json".into()
+        } else {
+            "json".into()
+        },
+    );
+    println!(
+        "[Groq][tools] done in {} ms text_len={}",
+        t_start.elapsed().as_millis(),
+        final_text.len()
+    );
+    Json(enriched)
+}
+
+
+#[derive(Debug, Deserialize)]
+struct MemoryAddRequest {
+    fact: String,
+    #[serde(default)]
+    tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemorySearchRequest {
+    #[serde(default)]
+    query: String,
+    #[serde(default)]
+    tag: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MemoryForgetRequest {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    all: Option<bool>,
+}
+
+async fn handle_memory_add(Json(payload): Json<MemoryAddRequest>) -> Json<serde_json::Value> {
+    let settings = load_settings();
+    if !settings.memory_enabled {
+        return Json(serde_json::json!({"error": "memory_enabled is false"}));
+    }
+    match memory::memory_add(&payload.fact, payload.tags) {
+        Ok(msg) => Json(serde_json::json!({"ok": true, "result": msg})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn handle_memory_search(Json(payload): Json<MemorySearchRequest>) -> Json<serde_json::Value> {
+    let settings = load_settings();
+    if !settings.memory_enabled {
+        return Json(serde_json::json!({"error": "memory_enabled is false"}));
+    }
+    let limit = payload.limit.unwrap_or(12);
+    match memory::memory_search(&payload.query, payload.tag.as_deref(), limit) {
+        Ok(msg) => Json(serde_json::json!({"ok": true, "result": msg})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn handle_memory_list() -> Json<serde_json::Value> {
+    let settings = load_settings();
+    if !settings.memory_enabled {
+        return Json(serde_json::json!({"error": "memory_enabled is false"}));
+    }
+    Json(memory::as_json_list(50))
+}
+
+async fn handle_memory_forget(Json(payload): Json<MemoryForgetRequest>) -> Json<serde_json::Value> {
+    let settings = load_settings();
+    if !settings.memory_enabled {
+        return Json(serde_json::json!({"error": "memory_enabled is false"}));
+    }
+    match memory::memory_forget(payload.id.as_deref(), payload.query.as_deref(), payload.all.unwrap_or(false)) {
+        Ok(msg) => Json(serde_json::json!({"ok": true, "result": msg})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn handle_tools_status() -> Json<serde_json::Value> {
+    let settings = load_settings();
+    Json(serde_json::json!({
+        "tools_enabled": settings.tools_enabled,
+        "tools_allow_shell": settings.tools_allow_shell,
+        "memory_enabled": settings.memory_enabled,
+        "chat_max_tokens": settings.chat_max_tokens,
+        "vision_max_tokens": settings.vision_max_tokens,
+        "groq_model": settings.groq_model,
+        "heavy_model": settings.heavy_model,
+        "model_router": settings.model_router,
+        "heavy_provider": settings.heavy_provider,
+        "recent": tools::recent_log(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct ToolsDebugRequest {
+    name: String,
+    #[serde(default)]
+    arguments: serde_json::Value,
+}
+
+async fn handle_tools_debug(
+    Json(payload): Json<ToolsDebugRequest>,
+) -> Json<serde_json::Value> {
+    let settings = load_settings();
+    if !settings.tools_enabled {
+        return Json(serde_json::json!({"error": "tools_enabled is false"}));
+    }
+    let args = if payload.arguments.is_null() {
+        serde_json::json!({})
+    } else {
+        payload.arguments
+    };
+    let result = tools::execute_tool(&payload.name, &args, settings.tools_allow_shell);
+    Json(serde_json::json!({
+        "name": payload.name,
+        "result": result,
+    }))
 }
 
 fn ensure_ort_dylib() {
@@ -793,12 +1279,12 @@ async fn handle_openrouter_chat(
         .to_string();
 
     if api_key.trim().is_empty() {
-        println!("[OpenRouter] ✗ Missing API key");
+        println!("[OpenRouter] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Missing API key");
         return Json(serde_json::json!({"error": "OpenRouter API key is missing"}));
     }
 
     if model.is_empty() {
-        println!("[OpenRouter] ✗ Missing model/provider");
+        println!("[OpenRouter] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Missing model/provider");
         return Json(serde_json::json!({"error": "OpenRouter model/provider is missing"}));
     }
 
@@ -841,13 +1327,13 @@ async fn handle_openrouter_chat(
                     Json(enriched)
                 }
                 Err(e) => {
-                    println!("[OpenRouter] ✗ Parse error: {}", e);
+                    println!("[OpenRouter] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Parse error: {}", e);
                     Json(serde_json::json!({"error": format!("Failed to parse response: {}", e)}))
                 }
             }
         }
         Err(e) => {
-            println!("[OpenRouter] ✗ Connection error: {}", e);
+            println!("[OpenRouter] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Connection error: {}", e);
             Json(serde_json::json!({"error": format!("Failed to reach OpenRouter: {}", e)}))
         }
     }
@@ -1118,6 +1604,12 @@ pub struct AppSettings {
     pub groq_api_key: String,
     #[serde(default = "default_groq_model")]
     pub groq_model: String,
+    #[serde(default = "default_heavy_model")]
+    pub heavy_model: String,
+    #[serde(default = "default_model_router")]
+    pub model_router: bool,
+    #[serde(default = "default_heavy_provider")]
+    pub heavy_provider: String,
     #[serde(default = "default_system_prompt")]
     pub system_prompt: String,
     #[serde(default = "default_tts_engine")]
@@ -1150,6 +1642,10 @@ pub struct AppSettings {
     pub vision_api_key: String,
     #[serde(default = "default_use_vision_model")]
     pub use_vision_model: bool,
+    #[serde(default = "default_live_screen_watch")]
+    pub live_screen_watch: bool,
+    #[serde(default = "default_live_screen_interval")]
+    pub live_screen_interval: f32,
     #[serde(default = "default_stt_provider")]
     pub stt_provider: String,
     #[serde(default = "default_stt_api_key")]
@@ -1158,6 +1654,79 @@ pub struct AppSettings {
     pub stt_autostart: bool,
     #[serde(default = "default_stt_port")]
     pub stt_port: u16,
+    #[serde(default = "default_tools_enabled")]
+    pub tools_enabled: bool,
+    #[serde(default = "default_tools_allow_shell")]
+    pub tools_allow_shell: bool,
+    #[serde(default = "default_memory_enabled")]
+    pub memory_enabled: bool,
+    #[serde(default = "default_chat_max_tokens")]
+    pub chat_max_tokens: u32,
+    #[serde(default = "default_vision_max_tokens")]
+    pub vision_max_tokens: u32,
+}
+
+
+fn default_heavy_model() -> String { String::new() }
+fn default_model_router() -> bool { false }
+fn default_heavy_provider() -> String { String::new() }
+
+fn last_user_text(messages: &[OllamaApiMessage]) -> String {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role == "user")
+        .map(|m| m.content.clone())
+        .unwrap_or_default()
+}
+
+fn message_looks_complex(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let len = text.chars().count();
+    if len > 220 {
+        return true;
+    }
+    const KEYS: &[&str] = &[
+        "plan", "fix", "debug", "refactor", "implement", "architecture",
+        "stack trace", "compile", "cargo ", "typescript", "python", "rustc",
+        "```", "function ", "class ", "error:", "traceback", "step by step",
+        "compare", "analyze", "write a", "build a", "design a",
+    ];
+    KEYS.iter().any(|k| lower.contains(k))
+}
+
+fn model_needs_reasoning_budget(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.contains("gpt-oss") || m.contains("o1") || m.contains("reason")
+}
+
+/// Phase 3 router: heavy_model for tool/planning turns or complex user messages.
+fn resolve_chat_model(
+    settings: &AppSettings,
+    messages: &[OllamaApiMessage],
+    requested: Option<String>,
+    tools_path: bool,
+) -> String {
+    let fast = settings.groq_model.trim().to_string();
+    let requested = requested
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let base = requested.unwrap_or_else(|| fast.clone());
+    let heavy = settings.heavy_model.trim().to_string();
+    if !settings.model_router || heavy.is_empty() {
+        return if base.is_empty() { "qwen/qwen3.8-27b".to_string() } else { base };
+    }
+    let user = last_user_text(messages);
+    let use_heavy = tools_path || message_looks_complex(&user);
+    let chosen = if use_heavy { heavy } else if base.is_empty() { fast } else { base };
+    println!(
+        "[Router] heavy={} tools_path={} complex={} -> {}",
+        settings.model_router,
+        tools_path,
+        message_looks_complex(&user),
+        chosen
+    );
+    chosen
 }
 
 fn default_tts_engine() -> String {
@@ -1234,10 +1803,17 @@ fn default_vision_api_type() -> String { "".to_string() }
 fn default_vision_model() -> String { "".to_string() }
 fn default_vision_api_key() -> String { "".to_string() }
 fn default_use_vision_model() -> bool { true }
+fn default_live_screen_watch() -> bool { false }
+fn default_live_screen_interval() -> f32 { 15.0 }
 fn default_stt_provider() -> String { "deepgram".to_string() }
 fn default_stt_api_key() -> String { "".to_string() }
 fn default_stt_autostart() -> bool { true }
 fn default_stt_port() -> u16 { 5001 }
+fn default_tools_enabled() -> bool { true }
+fn default_tools_allow_shell() -> bool { false }
+fn default_memory_enabled() -> bool { true }
+fn default_chat_max_tokens() -> u32 { 768 }
+fn default_vision_max_tokens() -> u32 { 192 }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -1250,6 +1826,9 @@ impl Default for AppSettings {
             openrouter_provider: default_openrouter_provider(),
             groq_api_key: default_groq_api_key(),
             groq_model: default_groq_model(),
+            heavy_model: default_heavy_model(),
+            model_router: default_model_router(),
+            heavy_provider: default_heavy_provider(),
             system_prompt: default_system_prompt(),
             tts_engine: default_tts_engine(),
             tts_language: default_tts_language(),
@@ -1266,10 +1845,17 @@ impl Default for AppSettings {
             vision_model: default_vision_model(),
             vision_api_key: default_vision_api_key(),
             use_vision_model: default_use_vision_model(),
+            live_screen_watch: default_live_screen_watch(),
+            live_screen_interval: default_live_screen_interval(),
             stt_provider: default_stt_provider(),
             stt_api_key: default_stt_api_key(),
             stt_autostart: default_stt_autostart(),
             stt_port: default_stt_port(),
+            tools_enabled: default_tools_enabled(),
+            tools_allow_shell: default_tools_allow_shell(),
+            memory_enabled: default_memory_enabled(),
+            chat_max_tokens: default_chat_max_tokens(),
+            vision_max_tokens: default_vision_max_tokens(),
         }
     }
 }
@@ -1426,7 +2012,7 @@ async fn handle_lilith_chat(
     }
     
     // Node.js Proxy Server (localhost:3032)
-    // Windows proxy → VPS Lilith Proxy (18789)
+    // Windows proxy ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ VPS Lilith Proxy (18789)
     let proxy_url = "http://127.0.0.1:3032/api/command";
     println!("[Chat] Target URL: {}", proxy_url);
     
@@ -1451,12 +2037,12 @@ async fn handle_lilith_chat(
             
             match response.json::<serde_json::Value>().await {
                 Ok(data) => {
-                    println!("[Chat] ✓ Response received: {:?}", data);
+                    println!("[Chat] ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Response received: {:?}", data);
                     println!("[Chat] ========== CHAT REQUEST END ==========");
                     Json(data)
                 }
                 Err(e) => {
-                    println!("[Chat] ✗ Parse error: {}", e);
+                    println!("[Chat] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Parse error: {}", e);
                     println!("[Chat] ========== CHAT REQUEST END ==========");
                     Json(serde_json::json!({
                         "error": format!("Failed to parse response: {}", e)
@@ -1465,7 +2051,7 @@ async fn handle_lilith_chat(
             }
         }
         Err(e) => {
-            println!("[Chat] ✗ Connection error: {}", e);
+            println!("[Chat] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Connection error: {}", e);
             println!("[Chat] ========== CHAT REQUEST END ==========");
             Json(serde_json::json!({
                 "error": format!("Failed to reach proxy: {}", e)
@@ -1613,14 +2199,18 @@ fn get_settings_path() -> std::path::PathBuf {
 fn load_settings() -> AppSettings {
     let path = get_settings_path();
     match std::fs::read_to_string(&path) {
-        Ok(content) => {
+        Ok(mut content) => {
+            // Strip UTF-8 BOM (PowerShell Set-Content -Encoding UTF8 writes one)
+            if content.starts_with('\u{feff}') {
+                content = content.trim_start_matches('\u{feff}').to_string();
+            }
             match serde_json::from_str::<AppSettings>(&content) {
                 Ok(settings) => {
                     println!("[Settings] Loaded from: {:?}", path);
                     settings
                 }
-                Err(_) => {
-                    println!("[Settings] Invalid JSON, using defaults");
+                Err(e) => {
+                    println!("[Settings] Invalid JSON ({}), using defaults", e);
                     AppSettings::default()
                 }
             }
@@ -1765,7 +2355,7 @@ async fn handle_ollama_chat(
                     text
                 }
                 Err(e) => {
-                    println!("[Ollama] ✗ Failed to read response: {}", e);
+                    println!("[Ollama] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Failed to read response: {}", e);
                     return Json(OllamaChatResponse {
                         text: format!("Failed to read response: {}", e),
                         emotion: "neutral".to_string(),
@@ -1809,7 +2399,7 @@ async fn handle_ollama_chat(
                     });
                 }
                 Err(e) => {
-                    println!("[Ollama] ✗ Parse error: {}", e);
+                    println!("[Ollama] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Parse error: {}", e);
                     println!("[Ollama] ========== CHAT REQUEST END ==========");
                     return Json(OllamaChatResponse {
                         text: format!("Error parsing response: {}", e),
@@ -1821,11 +2411,11 @@ async fn handle_ollama_chat(
         Err(e) => {
             if retry_count < max_retries {
                 retry_count += 1;
-                println!("[Ollama] ⚠ Connection error, retrying ({}/{}): {}", retry_count, max_retries, e);
+                println!("[Ollama] ÃƒÂ¢Ã…Â¡Ã‚Â  Connection error, retrying ({}/{}): {}", retry_count, max_retries, e);
                 tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                 continue;
             } else {
-                println!("[Ollama] ✗ Connection error (all retries failed): {}", e);
+                println!("[Ollama] ÃƒÂ¢Ã…â€œÃ¢â‚¬â€ Connection error (all retries failed): {}", e);
                 println!("[Ollama] ========== CHAT REQUEST END ==========");
                 return Json(OllamaChatResponse {
                     text: format!("Error connecting to Ollama: {}", e),
@@ -1970,7 +2560,44 @@ async fn handle_speak(
                 }
             }
         } else {
-            Err("Only ElevenLabs TTS is supported. Please provide an API key.".to_string())
+            // Edge TTS (Microsoft neural voices via Python edge_tts)
+            let voice = {
+                let custom = settings.tts_voice_id.trim().to_string();
+                if !custom.is_empty() {
+                    custom
+                } else if settings.tts_language.trim().to_lowercase().starts_with("tr") {
+                    "tr-TR-EmelNeural".to_string()
+                } else {
+                    "en-US-JennyNeural".to_string()
+                }
+            };
+            let temp_dir = std::env::temp_dir();
+            let output_path = temp_dir.join("openclaw_tts_http.mp3");
+            let output_str = output_path.to_string_lossy().to_string();
+            println!("[TTS] Edge TTS voice={} out={}", voice, output_str);
+            let result = Command::new("python")
+                .args([
+                    "-m", "edge_tts",
+                    "--voice", &voice,
+                    "--text", text,
+                    "--write-media", &output_str,
+                ])
+                .creation_flags(0x08000000)
+                .output()
+                .map_err(|e| format!("Failed to run edge-tts: {}", e))?;
+            if !result.status.success() {
+                let stderr = String::from_utf8_lossy(&result.stderr);
+                println!("[TTS] edge-tts stderr: {}", stderr);
+                return Err(format!("edge-tts error: {}", stderr));
+            }
+            let audio_bytes = std::fs::read(&output_path)
+                .map_err(|e| format!("Failed to read edge-tts audio: {}", e))?;
+            println!("[TTS] Edge TTS bytes: {}", audio_bytes.len());
+            Ok((
+                axum::http::StatusCode::OK,
+                [("Content-Type", "audio/mpeg")],
+                audio_bytes.into(),
+            ))
         }
     } else {
         Err("No text provided".to_string())
@@ -1994,6 +2621,12 @@ async fn start_http_server(clients: SharedClients) {
         .route("/lilith-status", get(handle_lilith_status))
         .route("/lilith-emotion", post(handle_lilith_emotion))
         .route("/capture_and_ask", post(handle_capture_and_ask))
+        .route("/tools-status", get(handle_tools_status))
+        .route("/tools-debug", post(handle_tools_debug))
+        .route("/memory/add", post(handle_memory_add))
+        .route("/memory/search", post(handle_memory_search))
+        .route("/memory/list", get(handle_memory_list))
+        .route("/memory/forget", post(handle_memory_forget))
         .layer(CorsLayer::permissive())
         .with_state(clients);
 

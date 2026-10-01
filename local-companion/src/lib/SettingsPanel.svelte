@@ -13,6 +13,9 @@
     openrouter_provider: string;
     groq_api_key: string;
     groq_model: string;
+    heavy_model?: string;
+    model_router?: boolean;
+    heavy_provider?: string;
     tts_engine: string;
     tts_language: string;
     tts_api_key: string;
@@ -23,6 +26,13 @@
     vision_model?: string;
     vision_api_key?: string;
     use_vision_model?: boolean;
+    live_screen_watch?: boolean;
+    live_screen_interval?: number;
+    tools_enabled?: boolean;
+    tools_allow_shell?: boolean;
+    memory_enabled?: boolean;
+    chat_max_tokens?: number;
+    vision_max_tokens?: number;
   }
 
   let settings: AppSettings = {
@@ -34,6 +44,9 @@
     openrouter_provider: "",
     groq_api_key: "",
     groq_model: "",
+    heavy_model: "",
+    model_router: false,
+    heavy_provider: "",
     tts_engine: "xtts_v2",
     tts_language: "tr",
     tts_api_key: "",
@@ -44,6 +57,13 @@
     vision_model: "",
     vision_api_key: "",
     use_vision_model: true,
+    live_screen_watch: false,
+    live_screen_interval: 12,
+    tools_enabled: true,
+    tools_allow_shell: false,
+    memory_enabled: true,
+    chat_max_tokens: 768,
+    vision_max_tokens: 192,
   };
 
   let availableModels: string[] = [];
@@ -278,8 +298,36 @@
             id="groq-model"
             type="text"
             bind:value={settings.groq_model}
-            placeholder="llama-3.3-70b-versatile"
+            placeholder="openai/gpt-oss-20b"
           />
+        </div>
+        <div class="settings-group">
+          <label for="heavy-model">Heavy model (Phase 3)</label>
+          <input
+            id="heavy-model"
+            type="text"
+            bind:value={settings.heavy_model}
+            placeholder="openai/gpt-oss-120b"
+          />
+        </div>
+        <div class="settings-group">
+          <label for="heavy-provider">Heavy provider</label>
+          <input
+            id="heavy-provider"
+            type="text"
+            bind:value={settings.heavy_provider}
+            placeholder="groq or ollama"
+          />
+        </div>
+        <div class="settings-group inline">
+          <label class="checkbox-row">
+            <input
+              type="checkbox"
+              bind:checked={settings.model_router}
+              on:change={() => saveSettings()}
+            />
+            <span>Model router (heavy for tools / complex)</span>
+          </label>
         </div>
       {/if}
 
@@ -297,6 +345,84 @@
           <span class="tooltip" title="Sends the current screen as an image to the vision model before each user message to enrich context.">?</span>
         </label>
       </div>
+      <div class="settings-group inline">
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            bind:checked={settings.live_screen_watch}
+            on:change={() => saveSettings()}
+          />
+          <span>Live screen watch (continuous reactions)</span>
+        </label>
+      </div>
+      <div class="settings-group inline">
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            bind:checked={settings.tools_enabled}
+            on:change={() => saveSettings()}
+          />
+          <span>Tools enabled (Phase 1 agent loop)</span>
+        </label>
+      </div>
+      <div class="settings-group inline">
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            bind:checked={settings.tools_allow_shell}
+            on:change={() => saveSettings()}
+          />
+          <span>Allow shell tool (whitelist only)</span>
+        </label>
+      </div>
+      <div class="settings-group inline">
+        <label class="checkbox-row">
+          <input
+            type="checkbox"
+            bind:checked={settings.memory_enabled}
+            on:change={() => saveSettings()}
+          />
+          <span>Memory enabled (Phase 2 local facts)</span>
+        </label>
+      </div>
+      <div class="settings-group">
+        <label for="chat-max-tokens">Chat max tokens</label>
+        <input
+          id="chat-max-tokens"
+          type="number"
+          min="128"
+          max="1024"
+          step="64"
+          bind:value={settings.chat_max_tokens}
+          on:change={() => saveSettings()}
+        />
+      </div>
+      <div class="settings-group">
+        <label for="vision-max-tokens">Vision max tokens</label>
+        <input
+          id="vision-max-tokens"
+          type="number"
+          min="32"
+          max="256"
+          step="32"
+          bind:value={settings.vision_max_tokens}
+          on:change={() => saveSettings()}
+        />
+      </div>
+      {#if settings.live_screen_watch}
+        <div class="settings-group">
+          <label for="live-screen-interval">Live watch interval (seconds)</label>
+          <input
+            id="live-screen-interval"
+            type="number"
+            min="10"
+            max="60"
+            step="1"
+            bind:value={settings.live_screen_interval}
+            on:change={() => saveSettings()}
+          />
+        </div>
+      {/if}
       <div class="settings-group">
         <label for="vision-api-type">API Type</label>
         <select id="vision-api-type" bind:value={settings.vision_api_type}>
