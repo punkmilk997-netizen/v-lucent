@@ -83,8 +83,7 @@
   let blinkTimer: number = 0;
   let nextBlinkTime: number = 2.0;
 
-  // HTTP Proxy to VPS
-  const VPS_PROXY_URL = "http://89.167.21.167:3031/api/command";
+  // OpenClaw/VPS proxy URL comes from settings.openclaw_endpoint (no hardcoded host/token).
 
   // OpenAI Speech-to-Speech (HTTP-based)
   let mediaRecorder: MediaRecorder | null = null;
@@ -188,26 +187,26 @@
   }
 
   let settings: AppSettings = {
-    api_type: "ollama",
+    api_type: "groq",
     ollama_endpoint: "",
     ollama_model: "",
     openclaw_endpoint: "",
     openrouter_api_key: "",
     openrouter_provider: "",
     groq_api_key: "",
-    groq_model: "",
-    heavy_model: "",
-    model_router: false,
-    heavy_provider: "",
+    groq_model: "openai/gpt-oss-20b",
+    heavy_model: "openai/gpt-oss-120b",
+    model_router: true,
+    heavy_provider: "groq",
     system_prompt: "",
-    tts_engine: "xtts_v2",
-    tts_language: "tr",
+    tts_engine: "edge",
+    tts_language: "en",
     tts_api_key: "",
-    tts_voice_id: "",
+    tts_voice_id: "en-US-AvaNeural",
     custom_vrm_name: "",
     custom_vrm_path: "",
-    vision_api_type: "",
-    vision_model: "",
+    vision_api_type: "groq",
+    vision_model: "qwen/qwen3.8-27b",
     vision_api_key: "",
     use_vision_model: true,
     live_screen_watch: false,

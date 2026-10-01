@@ -9,6 +9,7 @@ legacy/
 # Environment / secrets
 .env
 .env.*
+!.env.example
 
 # Node / frontend outputs
 node_modules/

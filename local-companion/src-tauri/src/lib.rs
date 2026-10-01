@@ -1667,9 +1667,9 @@ pub struct AppSettings {
 }
 
 
-fn default_heavy_model() -> String { String::new() }
-fn default_model_router() -> bool { false }
-fn default_heavy_provider() -> String { String::new() }
+fn default_heavy_model() -> String { "openai/gpt-oss-120b".to_string() }
+fn default_model_router() -> bool { true }
+fn default_heavy_provider() -> String { "groq".to_string() }
 
 fn last_user_text(messages: &[OllamaApiMessage]) -> String {
     messages
@@ -1730,11 +1730,11 @@ fn resolve_chat_model(
 }
 
 fn default_tts_engine() -> String {
-    "xtts_v2".to_string()
+    "edge".to_string()
 }
 
 fn default_tts_language() -> String {
-    "tr".to_string()
+    "en".to_string()
 }
 
 fn default_openrouter_api_key() -> String {
@@ -1754,7 +1754,7 @@ fn default_tts_api_key() -> String {
 }
 
 fn default_tts_voice_id() -> String {
-    "".to_string()
+    "en-US-AvaNeural".to_string()
 }
 
 fn default_custom_vrm_name() -> String {
@@ -1770,7 +1770,7 @@ fn default_groq_api_key() -> String {
 }
 
 fn default_groq_model() -> String {
-    String::new()
+    "openai/gpt-oss-20b".to_string()
 }
 
 fn default_vision_autostart() -> bool {
@@ -1799,8 +1799,8 @@ fn default_vision_install_dir() -> String {
     "Vision".to_string()
 }
 
-fn default_vision_api_type() -> String { "".to_string() }
-fn default_vision_model() -> String { "".to_string() }
+fn default_vision_api_type() -> String { "groq".to_string() }
+fn default_vision_model() -> String { "qwen/qwen3.8-27b".to_string() }
 fn default_vision_api_key() -> String { "".to_string() }
 fn default_use_vision_model() -> bool { true }
 fn default_live_screen_watch() -> bool { false }
@@ -1818,7 +1818,7 @@ fn default_vision_max_tokens() -> u32 { 192 }
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            api_type: "ollama".to_string(),
+            api_type: "groq".to_string(),
             ollama_endpoint: String::new(),
             ollama_model: String::new(),
             openclaw_endpoint: String::new(),
@@ -2568,7 +2568,7 @@ async fn handle_speak(
                 } else if settings.tts_language.trim().to_lowercase().starts_with("tr") {
                     "tr-TR-EmelNeural".to_string()
                 } else {
-                    "en-US-JennyNeural".to_string()
+                    "en-US-AvaNeural".to_string()
                 }
             };
             let temp_dir = std::env::temp_dir();
