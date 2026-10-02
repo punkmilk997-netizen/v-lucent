@@ -65,3 +65,10 @@ Open the PNG beside VRoid while you work.
 ## Quality note
 
 Until you export from VRoid, the best **Sol-likeness** VRM on disk is still the Blender **alpha-cutout card** baked from `noctelle-active.png`. The large Hub file `Desktop\desktop-assistant\Noctelle.vrm` (author Anna Lyra) is a full 3D humanoid but **not** Sol art — keep it as a 3D alternate only if you want that look.
+
+## Agent status (2026-10-01 night)
+
+- Saved project: `C:\Users\punkm\Documents\Noctelle-Sol.vroid` (also `local-companion/assets/vroid/Noctelle-Sol.vroid`)
+- Remote GUI automation edited presets in VRoid; title-bar **Export/F8** clicks are unreliable under agent mouse (window chrome / focus). 
+- **To finish VRM:** In VRoid with Noctelle-Sol open, click top-right export icon (or press **F8**) → Export VRM → save over `public/models/noctelle.vrm`, then tell agent to sync AppData + commit.
+- Until then `public/models/noctelle.vrm` remains the Sol sprite cutout billboard.

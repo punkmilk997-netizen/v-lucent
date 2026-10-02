@@ -1,0 +1,11 @@
+﻿from PIL import Image
+im = Image.open(r"C:\Users\punkm\Desktop\desktop-assistant\v-lucent\local-companion\docs\sol-vroid-refs\vroid-window-now.png")
+print("size", im.size)
+tabs = im.crop((400, 0, 1800, 90))
+tabs.save(r"C:\Users\punkm\Desktop\desktop-assistant\v-lucent\local-companion\docs\sol-vroid-refs\crop-tabs.png")
+left = im.crop((0, 80, 450, 900))
+left.save(r"C:\Users\punkm\Desktop\desktop-assistant\v-lucent\local-companion\docs\sol-vroid-refs\crop-left.png")
+faces = im.crop((60, 100, 420, 700))
+faces.save(r"C:\Users\punkm\Desktop\desktop-assistant\v-lucent\local-companion\docs\sol-vroid-refs\crop-faces.png")
+im.resize((im.size[0]//2, im.size[1]//2)).save(r"C:\Users\punkm\Desktop\desktop-assistant\v-lucent\local-companion\docs\sol-vroid-refs\vroid-half.png")
+print("crops ok")
