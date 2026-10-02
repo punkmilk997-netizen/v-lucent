@@ -49,3 +49,32 @@ VRM Add-on should already be installed under Blender user addons (`VRM_Addon_for
 ## True 3D Sol via VRoid (manual)
 
 VRoid Studio 2.3.0 is installed on this machine. Character sculpt/export is GUI-only — see **[vroid-sol-noctelle-steps.md](./vroid-sol-noctelle-steps.md)** (no agent mouse automation). Until a VRoid export lands, bundled `noctelle.vrm` remains the Sol PNG cutout card.
+
+## Hypno 0.2 Sol-recolor (personal local 3D) — 2026-10-02
+
+Downloaded **Hypno 0.2** from VRoid Hub for personal use and recolored textures/materials toward Sol PNG colors (deep warm brown skin, near-black hair, luminous violet eyes, dark purple cloth, light fluffy tail, black cat ears).
+
+| Item | Path |
+|------|------|
+| Primary custom VRM | %APPDATA%\com.openclaw.companion\custom_vrms\Noctelle.vrm |
+| Named copy | %APPDATA%\com.openclaw.companion\custom_vrms\Noctelle-HypnoSol.vrm |
+| Private working copy | local-companion/assets/private-vrms/noctelle-hypno-sol.vrm (gitignored) |
+| Hub original (gzip, personal archive) | local-companion/assets/private-vrms/Hypno-0.2-hub-original.vrm.gz (gitignored) |
+| Bundled GitHub default | public/models/noctelle.vrm **remains Sol PNG cutout** (not Hub-derived) |
+
+### Attribution (required)
+
+- Model: **Hypno 0.2** by **tsukiyoxd** on VRoid Hub (VRM meta author erthsrj4r6njam)
+- URL: https://hub.vroid.com/en/characters/500043327984890328/models/406745960618445241
+- License: Alterations **Allow**, Attribution **Required**, Redistribution **Do not allow**, Corporate use **no**, Individual commercial **nonprofit only**
+- Alteration by Punk Milk for local Noctelle companion (Sol sprite color target). **Do not push/redistribute** Hypno-derived VRM binaries to public GitHub or elsewhere.
+
+### Tweaks applied
+
+- Skin albedo (face/body): pale VRoid peach → deep warm brown (~#5c382e mid / #3a221c shadow)
+- Hair albedos + kill orange _EmissionColor on MToon hair mats → near-black (#150e16)
+- Eye iris albedo + violet emission toward luminous purple
+- Cloth reds shifted toward midnight purple; fox tail → light cream fluff; cat ears → dark outer / cream inner
+- VRM meta title Noctelle with attribution + Hub license URL preserved
+
+Load via Settings → Avatar custom VRM (AppData custom_vrms), or drop/select Noctelle.vrm there. Keep using bundled cutout on fresh clones without the private file.

@@ -72,3 +72,7 @@ Until you export from VRoid, the best **Sol-likeness** VRM on disk is still the 
 - Remote GUI automation edited presets in VRoid; title-bar **Export/F8** clicks are unreliable under agent mouse (window chrome / focus). 
 - **To finish VRM:** In VRoid with Noctelle-Sol open, click top-right export icon (or press **F8**) → Export VRM → save over `public/models/noctelle.vrm`, then tell agent to sync AppData + commit.
 - Until then `public/models/noctelle.vrm` remains the Sol sprite cutout billboard.
+
+## Agent status (2026-10-02) — Hypno Sol-recolor local
+
+A full humanoid **Hypno 0.2** Hub download was recolored toward Sol sprites and installed only under AppData custom_vrms + gitignored ssets/private-vrms. See **avatars-noctelle.md** for attribution. Redistribution is forbidden — do not commit the binary. Bundled public/models/noctelle.vrm stays the cutout card for GitHub.

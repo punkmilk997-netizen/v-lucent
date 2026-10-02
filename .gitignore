@@ -40,3 +40,7 @@ venv/
 # VRoid automation screenshots
 local-companion/docs/sol-vroid-refs/auto/
 
+
+# Hypno-derived / Hub originals — redistribution forbidden; personal local use only
+local-companion/assets/private-vrms/
+
