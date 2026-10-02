@@ -32,11 +32,6 @@
     "longDescription": "Local visual companion for OpenClaw / Lilith with VRM avatar, TTS/STT, and tool use. tools_allow_shell stays false by default.",
     "category": "Utility",
     "windows": {
-      "nsis": {
-        "installMode": "currentUser",
-        "shortcutName": "OpenClaw Companion",
-        "uninstallDisplayName": "OpenClaw Companion"
-      },
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
         "silent": true
