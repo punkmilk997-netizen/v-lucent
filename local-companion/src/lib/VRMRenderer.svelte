@@ -9,7 +9,7 @@
   import { VRM, VRMLoaderPlugin } from "@pixiv/three-vrm";
 
   export let emotion: string = "neutral";
-  export let modelPath: string = "/models/model1.vrm";
+  export let modelPath: string = "/models/noctelle.vrm";
 
   let containerEl: HTMLDivElement;
   let scene: THREE.Scene;
@@ -2414,7 +2414,7 @@
             <option value="vrm">VRM (3D)</option>
             <option value="sprite">Noctelle sprite (2D)</option>
           </select>
-          <p class="input-hint">Sol-derived art ships as Noctelle sprites under /media/noctelle. Custom VRM still uses AppData custom_vrms.</p>
+          <p class="input-hint">Default VRM is Sol-derived Noctelle billboard (/models/noctelle.vrm). Sprites remain under /media/noctelle; custom VRM upload still uses AppData custom_vrms.</p>
         </div>
         {#if spriteMode}
           <div class="settings-group">

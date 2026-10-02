@@ -1,0 +1,5 @@
+﻿# Local VRM build scratch (download addon yourself)
+vrm_addon.zip
+*.blend
+docs/
+index.md

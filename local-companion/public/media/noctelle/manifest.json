@@ -11,15 +11,19 @@
       "/media/noctelle/noctelle-nap-3.png",
       "/media/noctelle/noctelle-nap-4.png"
     ],
-    "sprite_sheet": "/media/noctelle/noctelle-sprite-sheet.png"
+    "sprite_sheet": "/media/noctelle/noctelle-sprite-sheet.png",
+    "vrm": "/models/noctelle.vrm"
   },
   "defaults": {
     "avatar_mode": "vrm",
-    "sprite_asset": "/media/noctelle/noctelle-active.png"
+    "sprite_asset": "/media/noctelle/noctelle-active.png",
+    "vrm_model": "/models/noctelle.vrm"
   },
   "runtime_notes": {
     "vrm_custom_dir": "%APPDATA%/<tauri-app>/custom_vrms (existing upload path)",
-    "bundled_vrm": "/models/model1.vrm",
-    "no_sol_vrm": "SolAssistant-handoff.zip contained PNG sprites only; no VRM"
+    "bundled_vrm": "/models/noctelle.vrm",
+    "legacy_bundled_vrm": "/models/model1.vrm",
+    "noctelle_vrm_quality": "Approximate Sol-derived billboard VRM (PNG plane on humanoid armature via Blender). Not a commissioned 3D sculpt or AI mesh-from-image. No local GPU/torch for TripoSR-class conversion.",
+    "sol_source": "SolAssistant-handoff.zip contained PNG sprites only; noctelle.vrm baked from noctelle-active.png"
   }
 }
