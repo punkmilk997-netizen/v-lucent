@@ -45,3 +45,7 @@ VRM Add-on should already be installed under Blender user addons (`VRM_Addon_for
 - No Sol `.ps1` / `.cmd` runtime
 - No Sol AppData notes/doodles trial content
 - No full 3D mesh-from-PNG (GPU AI unavailable on this machine)
+
+## True 3D Sol via VRoid (manual)
+
+VRoid Studio 2.3.0 is installed on this machine. Character sculpt/export is GUI-only — see **[vroid-sol-noctelle-steps.md](./vroid-sol-noctelle-steps.md)** (no agent mouse automation). Until a VRoid export lands, bundled `noctelle.vrm` remains the Sol PNG cutout card.
