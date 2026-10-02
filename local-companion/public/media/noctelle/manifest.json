@@ -1,0 +1,25 @@
+﻿{
+  "product": "Noctelle",
+  "lineage": "Sol → Noctelle (Sol sprites renamed; Sol PowerShell runtime is not used)",
+  "bundled": {
+    "active": "/media/noctelle/noctelle-active.png",
+    "active_alt": "/media/noctelle/noctelle-active-alt.png",
+    "nap_frames": [
+      "/media/noctelle/noctelle-nap-0.png",
+      "/media/noctelle/noctelle-nap-1.png",
+      "/media/noctelle/noctelle-nap-2.png",
+      "/media/noctelle/noctelle-nap-3.png",
+      "/media/noctelle/noctelle-nap-4.png"
+    ],
+    "sprite_sheet": "/media/noctelle/noctelle-sprite-sheet.png"
+  },
+  "defaults": {
+    "avatar_mode": "vrm",
+    "sprite_asset": "/media/noctelle/noctelle-active.png"
+  },
+  "runtime_notes": {
+    "vrm_custom_dir": "%APPDATA%/<tauri-app>/custom_vrms (existing upload path)",
+    "bundled_vrm": "/models/model1.vrm",
+    "no_sol_vrm": "SolAssistant-handoff.zip contained PNG sprites only; no VRM"
+  }
+}

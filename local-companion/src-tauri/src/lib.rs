@@ -1811,6 +1811,10 @@ pub struct AppSettings {
     pub custom_vrm_name: String,
     #[serde(default = "default_custom_vrm_path")]
     pub custom_vrm_path: String,
+    #[serde(default = "default_avatar_mode")]
+    pub avatar_mode: String,
+    #[serde(default = "default_sprite_asset")]
+    pub sprite_asset: String,
     #[serde(default = "default_vision_autostart")]
     pub vision_autostart: bool,
     #[serde(default = "default_vision_port")]
@@ -1908,6 +1912,14 @@ fn default_custom_vrm_path() -> String {
     "".to_string()
 }
 
+fn default_avatar_mode() -> String {
+    "vrm".to_string()
+}
+
+fn default_sprite_asset() -> String {
+    "/media/noctelle/noctelle-active.png".to_string()
+}
+
 fn default_groq_api_key() -> String {
     "".to_string()
 }
@@ -1979,6 +1991,8 @@ impl Default for AppSettings {
             tts_voice_id: default_tts_voice_id(),
             custom_vrm_name: default_custom_vrm_name(),
             custom_vrm_path: default_custom_vrm_path(),
+            avatar_mode: default_avatar_mode(),
+            sprite_asset: default_sprite_asset(),
             vision_autostart: default_vision_autostart(),
             vision_port: default_vision_port(),
             vision_interval: default_vision_interval(),

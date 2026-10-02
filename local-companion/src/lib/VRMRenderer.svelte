@@ -22,6 +22,16 @@
   let debugInfo: string = "";
   let uploadedVRMName: string = "";
   const CUSTOM_VRM_DIR = "custom_vrms";
+  const NOCTELLE_SPRITE_PRESETS: { id: string; label: string; path: string }[] = [
+    { id: "active", label: "Noctelle active", path: "/media/noctelle/noctelle-active.png" },
+    { id: "active-alt", label: "Noctelle active (alt)", path: "/media/noctelle/noctelle-active-alt.png" },
+    { id: "nap-0", label: "Noctelle nap 0", path: "/media/noctelle/noctelle-nap-0.png" },
+    { id: "nap-1", label: "Noctelle nap 1", path: "/media/noctelle/noctelle-nap-1.png" },
+    { id: "nap-2", label: "Noctelle nap 2", path: "/media/noctelle/noctelle-nap-2.png" },
+    { id: "nap-3", label: "Noctelle nap 3", path: "/media/noctelle/noctelle-nap-3.png" },
+    { id: "nap-4", label: "Noctelle nap 4", path: "/media/noctelle/noctelle-nap-4.png" },
+  ];
+  const DEFAULT_SPRITE_ASSET = "/media/noctelle/noctelle-active.png";
   let pendingCustomVRM: { path: string; name?: string } | null = null;
   let loadRequestId = 0;
   let vrmFileInput: HTMLInputElement | null = null;
@@ -187,6 +197,10 @@
     memory_enabled?: boolean;
     chat_max_tokens?: number;
     vision_max_tokens?: number;
+    custom_vrm_name?: string;
+    custom_vrm_path?: string;
+    avatar_mode?: string;
+    sprite_asset?: string;
   }
 
   let settings: AppSettings = {
@@ -208,6 +222,8 @@
     tts_voice_id: "en-US-AvaNeural",
     custom_vrm_name: "",
     custom_vrm_path: "",
+    avatar_mode: "vrm",
+    sprite_asset: "/media/noctelle/noctelle-active.png",
     vision_api_type: "groq",
     vision_model: "qwen/qwen3.8-27b",
     vision_api_key: "",
@@ -286,6 +302,25 @@
       agencyBusy = false;
     }
   };
+
+
+  $: spriteMode = (settings.avatar_mode || "vrm").toLowerCase() === "sprite";
+  $: spriteSrc = (settings.sprite_asset || DEFAULT_SPRITE_ASSET).trim() || DEFAULT_SPRITE_ASSET;
+
+  function selectSpritePreset(path: string) {
+    settings = { ...settings, avatar_mode: "sprite", sprite_asset: path };
+    scheduleSettingsSave();
+  }
+
+  function setAvatarMode(mode: string) {
+    const next = mode === "sprite" ? "sprite" : "vrm";
+    settings = {
+      ...settings,
+      avatar_mode: next,
+      sprite_asset: settings.sprite_asset || DEFAULT_SPRITE_ASSET,
+    };
+    scheduleSettingsSave();
+  }
 
   const loadSettings = async () => {
     try {
@@ -2335,9 +2370,18 @@
   <div
     bind:this={containerEl}
     class="vrm-container"
+    class:sprite-hidden={spriteMode}
     role="region"
     aria-label="VRM Avatar"
   ></div>
+  {#if spriteMode}
+    <img
+      class="noctelle-sprite"
+      src={spriteSrc}
+      alt="Noctelle"
+      draggable="false"
+    />
+  {/if}
   <div class="drag-overlay" onmousedown={handleMouseDown} onwheel={handleWheel} role="button" tabindex="0"></div>
   
   <!-- Chat Toggle Button -->
@@ -2360,6 +2404,35 @@
 
       <div class="settings-content">
         <div class="section-title">Avatar</div>
+        <div class="settings-group">
+          <label for="avatar-mode">Presentation</label>
+          <select
+            id="avatar-mode"
+            value={settings.avatar_mode || "vrm"}
+            onchange={(e) => setAvatarMode((e.currentTarget as HTMLSelectElement).value)}
+          >
+            <option value="vrm">VRM (3D)</option>
+            <option value="sprite">Noctelle sprite (2D)</option>
+          </select>
+          <p class="input-hint">Sol-derived art ships as Noctelle sprites under /media/noctelle. Custom VRM still uses AppData custom_vrms.</p>
+        </div>
+        {#if spriteMode}
+          <div class="settings-group">
+            <label for="sprite-preset">Noctelle sprite</label>
+            <select
+              id="sprite-preset"
+              value={spriteSrc}
+              onchange={(e) => selectSpritePreset((e.currentTarget as HTMLSelectElement).value)}
+            >
+              {#each NOCTELLE_SPRITE_PRESETS as preset}
+                <option value={preset.path}>{preset.label}</option>
+              {/each}
+            </select>
+            <div class="sprite-preview-wrap">
+              <img class="sprite-preview" src={spriteSrc} alt="Noctelle preview" />
+            </div>
+          </div>
+        {/if}
         <div class="settings-group">
           <label>Load VRM</label>
           <div class="vrm-upload-row">
@@ -2828,6 +2901,44 @@
     width: 100%;
     height: 100%;
     position: relative;
+  }
+
+  .vrm-container.sprite-hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .noctelle-sprite {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%);
+    height: 88%;
+    width: auto;
+    max-width: 100%;
+    object-fit: contain;
+    object-position: bottom center;
+    pointer-events: none;
+    z-index: 1;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .sprite-preview-wrap {
+    margin-top: 8px;
+    display: flex;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+    padding: 8px;
+    max-height: 160px;
+    overflow: hidden;
+  }
+
+  .sprite-preview {
+    max-height: 140px;
+    width: auto;
+    object-fit: contain;
   }
 
   .vrm-container {
